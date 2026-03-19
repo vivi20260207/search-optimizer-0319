@@ -74,7 +74,7 @@ def resource_type_label(val):
     n = val.name if hasattr(val, 'name') else str(val)
     return {
         "CAMPAIGN": "Campaign", "AD_GROUP": "广告组",
-        "AD_GROUP_CRITERION": "关键词", "AD_GROUP_AD": "广告",
+        "AD_GROUP_CRITERION": "关键词", "AD_GROUP_AD": "广告", "AD": "广告",
         "CAMPAIGN_CRITERION": "Campaign否定词", "AD_GROUP_BID_MODIFIER": "出价调整",
         "CAMPAIGN_BUDGET": "预算", "ASSET": "素材",
         "AD_GROUP_ASSET": "广告组素材", "CAMPAIGN_ASSET": "Campaign素材",
@@ -93,7 +93,8 @@ def client_type_label(val):
         "GOOGLE_ADS_SCRIPTS": "脚本", "GOOGLE_ADS_BULK_UPLOAD": "批量上传",
         "GOOGLE_ADS_API": "API", "GOOGLE_ADS_EDITOR": "Editor",
         "GOOGLE_ADS_MOBILE_APP": "移动端", "GOOGLE_ADS_RECOMMENDATIONS": "建议",
-        "GOOGLE_ADS_AUTOMATED_BIDDING": "自动出价", "INTERNAL": "内部", "OTHER": "其他",
+        "GOOGLE_ADS_AUTOMATED_BIDDING": "自动出价", "INTERNAL": "内部",
+        "INTERNAL_TOOL": "内部工具", "OTHER": "其他",
     }.get(n, n)
 
 def extract_detail(ce):
@@ -201,11 +202,12 @@ def neg_sub_type(fields):
     if "mobile_application" in joined: return "排除App"
     return ""
 
-def parse(row):
+def parse(row, account_id=""):
     ce = row.change_event
     fields = list(ce.changed_fields.paths) if ce.changed_fields and ce.changed_fields.paths else []
     rt = resource_type_label(ce.change_resource_type)
     rec = {
+        "accountId": account_id,
         "dateTime": ce.change_date_time if ce.change_date_time else "",
         "campaign": row.campaign.name if row.campaign else "",
         "adGroup": row.ad_group.name if row.ad_group and row.ad_group.name else "",
@@ -234,7 +236,7 @@ def main():
         print(f"[{i+1}/{len(ACCOUNTS)}] Account {cid}...", end=" ", flush=True)
         t0 = time.time()
         rows = run_query(client, cid, QUERY, "CHANGE")
-        parsed = [parse(r) for r in rows]
+        parsed = [parse(r, cid) for r in rows]
         all_changes.extend(parsed)
         print(f"{len(parsed)} events ({time.time()-t0:.1f}s)")
 

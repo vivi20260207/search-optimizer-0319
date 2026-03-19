@@ -1956,32 +1956,69 @@ function renderGender() {
   U.html('gender-tbody', gHtml || '<tr><td colspan="9" class="muted" style="text-align:center;padding:20px;">暂无性别数据。运行 fetch_adw_data.py 拉取 gender_view 后可用。</td></tr>');
 }
 
+let _allAgeCache = [];
+
 function renderAge() {
-  const allAge = [];
+  _allAgeCache = [];
   Object.entries(AGE_MAP).forEach(([camp, rows]) => {
     const campTotal = rows.reduce((s, r) => s + (r.cost || 0), 0);
-    rows.forEach(r => allAge.push({ ...r, campTotal }));
+    rows.forEach(r => {
+      const roas = r.cost > 0 ? (r.revenue || 0) / r.cost : 0;
+      _allAgeCache.push({ ...r, campTotal, roas });
+    });
   });
 
-  const totalAgeCost = allAge.reduce((s, r) => s + (r.cost || 0), 0);
-  const youngCost = allAge.filter(r => r.ageRange === '18-24' || r.ageRange === '25-34').reduce((s, r) => s + (r.cost || 0), 0);
-  const seniorCost = allAge.filter(r => r.ageRange === '55-64' || r.ageRange === '65+').reduce((s, r) => s + (r.cost || 0), 0);
-  const unknownCost = allAge.filter(r => r.ageRange === '未确定').reduce((s, r) => s + (r.cost || 0), 0);
+  const campNames = [...new Set(_allAgeCache.map(r => r.campaign))].sort();
+  const campSelect = document.getElementById('age-filter-camp');
+  if (campSelect) {
+    campSelect.innerHTML = '<option value="all">全部 Campaign</option>' +
+      campNames.map(c => `<option value="${c}">${U.campShortName(c)}</option>`).join('');
+  }
+
+  renderAgeKpis(_allAgeCache);
+  renderAgeTable(_allAgeCache);
+
+  const rangeFilter = document.getElementById('age-filter-range');
+  const campFilter = document.getElementById('age-filter-camp');
+  if (rangeFilter) rangeFilter.onchange = () => applyAgeFilters();
+  if (campFilter) campFilter.onchange = () => applyAgeFilters();
+}
+
+function applyAgeFilters() {
+  const rangeVal = document.getElementById('age-filter-range')?.value || 'all';
+  const campVal = document.getElementById('age-filter-camp')?.value || 'all';
+  let filtered = _allAgeCache;
+  if (rangeVal !== 'all') filtered = filtered.filter(r => r.ageRange === rangeVal);
+  if (campVal !== 'all') filtered = filtered.filter(r => r.campaign === campVal);
+  renderAgeKpis(filtered);
+  renderAgeTable(filtered);
+}
+
+function renderAgeKpis(data) {
+  const totalCost = data.reduce((s, r) => s + (r.cost || 0), 0);
+  const totalRevenue = data.reduce((s, r) => s + (r.revenue || 0), 0);
+  const youngCost = data.filter(r => r.ageRange === '18-24' || r.ageRange === '25-34').reduce((s, r) => s + (r.cost || 0), 0);
+  const seniorCost = data.filter(r => r.ageRange === '55-64' || r.ageRange === '65+').reduce((s, r) => s + (r.cost || 0), 0);
+  const overallRoas = totalCost > 0 ? totalRevenue / totalCost : 0;
+  const campCount = new Set(data.map(r => r.campaign)).size;
 
   U.html('age-kpis', `
-    <div class="kpi-card"><div class="kpi-label">有年龄数据 Campaign</div><div class="kpi-value">${Object.keys(AGE_MAP).length}</div></div>
-    <div class="kpi-card"><div class="kpi-label">18-34 核心人群花费</div><div class="kpi-value">${U.fmtK(Math.round(youngCost))}</div><div class="kpi-sub">${U.fmtPct(U.pct(youngCost, totalAgeCost), 1)} 占比</div></div>
-    <div class="kpi-card"><div class="kpi-label">55+ 低意愿花费</div><div class="kpi-value clr-${seniorCost > 500 ? 'warn' : 'good'}">${U.fmtK(Math.round(seniorCost))}</div><div class="kpi-sub">${U.fmtPct(U.pct(seniorCost, totalAgeCost), 1)} 占比</div></div>
-    <div class="kpi-card"><div class="kpi-label">未确定年龄花费</div><div class="kpi-value clr-${U.pct(unknownCost, totalAgeCost) > 20 ? 'warn' : 'good'}">${U.fmtK(Math.round(unknownCost))}</div><div class="kpi-sub">${U.fmtPct(U.pct(unknownCost, totalAgeCost), 1)} 占比</div></div>
+    <div class="kpi-card"><div class="kpi-label">Campaign 数</div><div class="kpi-value">${campCount}</div></div>
+    <div class="kpi-card"><div class="kpi-label">18-34 核心人群花费</div><div class="kpi-value">${U.fmtK(Math.round(youngCost))}</div><div class="kpi-sub">${U.fmtPct(U.pct(youngCost, totalCost), 1)} 占比</div></div>
+    <div class="kpi-card"><div class="kpi-label">55+ 低意愿花费</div><div class="kpi-value clr-${seniorCost > 500 ? 'warn' : 'good'}">${U.fmtK(Math.round(seniorCost))}</div><div class="kpi-sub">${U.fmtPct(U.pct(seniorCost, totalCost), 1)} 占比</div></div>
+    <div class="kpi-card"><div class="kpi-label">整体 ROAS</div><div class="kpi-value clr-${overallRoas >= 1 ? 'good' : 'bad'}">${U.fmt(overallRoas, 2)}</div><div class="kpi-sub">转化价值 ${U.fmtK(Math.round(totalRevenue))}</div></div>
   `);
+}
 
+function renderAgeTable(data) {
   let aHtml = '';
-  allAge.sort((a, b) => {
+  data.sort((a, b) => {
     if (a.campaign !== b.campaign) return a.campaign.localeCompare(b.campaign);
     return (b.cost || 0) - (a.cost || 0);
   }).forEach(r => {
     const pct = r.campTotal > 0 ? U.pct(r.cost, r.campTotal) : 0;
     const isLowValue = (r.ageRange === '65+' || r.ageRange === '未确定') && r.cost > 50;
+    const roasClr = r.roas >= 1 ? 'clr-good' : r.roas > 0 ? 'clr-warn' : '';
     aHtml += `<tr${isLowValue ? ' style="background:var(--orange-bg)"' : ''}>
       <td class="bold">${U.campShortName(r.campaign)}</td>
       <td>${r.ageRange}</td>
@@ -1990,11 +2027,12 @@ function renderAge() {
       <td class="num">${U.fmtK(r.impressions)}</td>
       <td class="num">${U.fmt(r.conversions, 0)}</td>
       <td class="num">${U.fmtK(Math.round(r.revenue))}</td>
+      <td class="num bold ${roasClr}">${U.fmt(r.roas, 2)}</td>
       <td class="num">${U.fmtPct(pct, 1)}</td>
       <td>${isLowValue ? '<span class="badge badge-warn">低价值年龄段</span>' : ''}</td>
     </tr>`;
   });
-  U.html('age-tbody', aHtml || '<tr><td colspan="9" class="muted" style="text-align:center;padding:20px;">暂无年龄数据。运行 fetch_adw_data.py 拉取 age_range_view 后可用。</td></tr>');
+  U.html('age-tbody', aHtml || '<tr><td colspan="10" class="muted" style="text-align:center;padding:20px;">暂无匹配数据</td></tr>');
 }
 
 // ═══════════════════════════════════════

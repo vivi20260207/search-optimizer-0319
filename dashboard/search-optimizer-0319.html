@@ -523,13 +523,31 @@
       </div>
       <div id="age-kpis" class="kpi-grid kpi-grid-4"></div>
       <div class="card">
-        <div class="card-header"><h3>年龄段消耗明细</h3><span class="muted">关注 65+ 和未确定年龄段的花费</span></div>
+        <div class="card-header">
+          <h3>年龄段消耗明细</h3>
+          <div style="display:flex;gap:10px;align-items:center;">
+            <select id="age-filter-range" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+              <option value="all">全部年龄段</option>
+              <option value="18-24">18-24</option>
+              <option value="25-34">25-34</option>
+              <option value="35-44">35-44</option>
+              <option value="45-54">45-54</option>
+              <option value="55-64">55-64</option>
+              <option value="65+">65+</option>
+              <option value="未确定">未确定</option>
+            </select>
+            <select id="age-filter-camp" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+              <option value="all">全部 Campaign</option>
+            </select>
+          </div>
+        </div>
         <div class="card-body-flush table-wrap">
           <table>
             <thead><tr>
               <th>Campaign</th><th>年龄段</th>
               <th class="num">花费</th><th class="num">点击</th><th class="num">展示</th>
               <th class="num">转化</th><th class="num">转化价值</th>
+              <th class="num">ROAS</th>
               <th class="num">占 Campaign 花费%</th>
               <th>风险</th>
             </tr></thead>

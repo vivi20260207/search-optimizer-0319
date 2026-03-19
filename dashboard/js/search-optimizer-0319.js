@@ -2824,6 +2824,75 @@ function renderNegKWCenter() {
     return `${type}__${(keyword||'').toLowerCase()}__${(campaign||'').substring(0,30)}`;
   }
 
+  function buildAffectedSTHtml(keyword, campaign, matchType) {
+    const kw = keyword.toLowerCase().trim();
+    const stArr = ST_MAP[campaign] || [];
+    let affected;
+    if (matchType === '精确匹配') {
+      affected = stArr.filter(st => st.term && st.term.toLowerCase().trim() === kw);
+    } else if (matchType === '词组匹配') {
+      const re = new RegExp('\\b' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+      affected = stArr.filter(st => st.term && re.test(st.term));
+    } else {
+      affected = stArr.filter(st => st.term && st.term.toLowerCase().includes(kw));
+    }
+    if (affected.length === 0) {
+      return `<div class="drawer-section-title">🔍 受影响搜索词（该Campaign）</div>
+        <div class="muted" style="padding:10px 0;font-size:12px;">该 Campaign 的搜索词中未找到包含 "${keyword}" 的记录。可能该词已被成功拦截或数据周期内无触发。</div>`;
+    }
+    affected.sort((a, b) => (b.cost || 0) - (a.cost || 0));
+    const totalCost = affected.reduce((s, st) => s + (st.cost || 0), 0);
+    const totalConv = affected.reduce((s, st) => s + (st.purchaseNew || 0), 0);
+    const totalRev = affected.reduce((s, st) => s + (st.purchaseNewValue || 0), 0);
+    const overallRoas = totalCost > 0 ? totalRev / totalCost : 0;
+    const hasValue = totalConv > 0;
+
+    let html = `<div class="drawer-section-title">🔍 受影响搜索词 — ${affected.length} 个匹配</div>`;
+    html += `<div style="display:flex;gap:12px;margin:8px 0 12px;flex-wrap:wrap;">
+      <div style="background:var(--bg-sub);padding:8px 14px;border-radius:8px;font-size:12px;">
+        <div class="muted">总花费</div><div style="font-size:16px;font-weight:700;">${U.fmtK(Math.round(totalCost))}</div>
+      </div>
+      <div style="background:var(--bg-sub);padding:8px 14px;border-radius:8px;font-size:12px;">
+        <div class="muted">总转化</div><div style="font-size:16px;font-weight:700;color:${totalConv > 0 ? 'var(--green)' : 'inherit'}">${totalConv}</div>
+      </div>
+      <div style="background:var(--bg-sub);padding:8px 14px;border-radius:8px;font-size:12px;">
+        <div class="muted">ROAS</div><div style="font-size:16px;font-weight:700;color:${overallRoas >= 1 ? 'var(--green)' : overallRoas > 0 ? 'var(--orange)' : 'inherit'}">${U.fmt(overallRoas, 2)}</div>
+      </div>
+    </div>`;
+
+    if (hasValue) {
+      html += `<div style="background:var(--red-bg);border:1px solid var(--red);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--red);font-weight:600;">
+        ⚠️ 这些搜索词有 ${totalConv} 次转化（ROAS ${U.fmt(overallRoas, 2)}），广泛否定会误杀有效流量！建议改为词组或精确匹配。</div>`;
+    } else {
+      html += `<div style="background:var(--green-bg, #f0fdf4);border:1px solid var(--green);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--green);font-weight:600;">
+        ✅ 这些搜索词均无转化，广泛否定可安全保留。</div>`;
+    }
+
+    html += `<div style="max-height:260px;overflow-y:auto;"><table style="width:100%;font-size:11px;border-collapse:collapse;">
+      <thead><tr style="background:var(--bg-sub);position:sticky;top:0;">
+        <th style="text-align:left;padding:6px;">搜索词</th>
+        <th style="text-align:right;padding:6px;">花费</th>
+        <th style="text-align:right;padding:6px;">点击</th>
+        <th style="text-align:right;padding:6px;">转化</th>
+        <th style="text-align:right;padding:6px;">收入</th>
+        <th style="text-align:right;padding:6px;">ROAS</th>
+      </tr></thead><tbody>`;
+    affected.forEach(st => {
+      const roas = st.cost > 0 ? (st.purchaseNewValue || 0) / st.cost : 0;
+      const hasConv = (st.purchaseNew || 0) > 0;
+      html += `<tr style="border-bottom:1px solid #f1f5f9;${hasConv ? 'background:var(--red-bg);' : ''}">
+        <td style="padding:5px 6px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${st.term}">${st.term}</td>
+        <td style="text-align:right;padding:5px 6px;">${U.fmtK(Math.round(st.cost))}</td>
+        <td style="text-align:right;padding:5px 6px;">${st.clicks || 0}</td>
+        <td style="text-align:right;padding:5px 6px;${hasConv ? 'color:var(--green);font-weight:600;' : ''}">${st.purchaseNew || 0}</td>
+        <td style="text-align:right;padding:5px 6px;">${U.fmtK(Math.round(st.purchaseNewValue || 0))}</td>
+        <td style="text-align:right;padding:5px 6px;font-weight:600;color:${roas >= 1 ? 'var(--green)' : roas > 0 ? 'var(--orange)' : 'inherit'}">${U.fmt(roas, 2)}</td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+    return html;
+  }
+
   function openDiagDrawer(title, detail, diagId, extraHtml) {
     const overlay = U.el('drawer-overlay');
     const drawer = U.el('kw-drawer');
@@ -3025,6 +3094,7 @@ function renderNegKWCenter() {
             </div>`;
           });
         }
+        extraHtml += buildAffectedSTHtml(e.keyword, e.campaign, e.matchType);
       } else if (type === 'gap') {
         const g = gapAlerts[idx]; if (!g) return;
         diagId = makeDiagId('gap', g.keyword, g.missingIn);
@@ -3146,8 +3216,8 @@ function renderNegKWCenter() {
     U.el('negkw-table-count').textContent = filtered.length + ' 个';
 
     let html = '';
-    filtered.forEach(e => {
-      html += `<tr>
+    filtered.forEach((e, i) => {
+      html += `<tr class="negkw-row" data-negkw-idx="${i}" style="cursor:pointer;">
         <td>${diagBadge(e)}</td>
         <td><span class="badge ${e.level === 'Campaign' ? 'badge-search' : 'badge-info'}" style="font-size:10px;">${e.level}</span></td>
         <td class="bold" title="${e.campaign}" style="font-size:12px;">${U.campShortName(e.campaign || '--')}</td>
@@ -3159,6 +3229,27 @@ function renderNegKWCenter() {
     });
     if (!html) html = '<tr><td colspan="7" class="muted" style="text-align:center;padding:30px;">无匹配的否定关键词</td></tr>';
     U.html('negkw-c-tbody', html);
+
+    document.querySelectorAll('#negkw-c-tbody .negkw-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const i = parseInt(row.dataset.negkwIdx);
+        const e = filtered[i]; if (!e) return;
+        const diagId = makeDiagId('row', e.keyword, e.campaign);
+        const titleText = `🔎 ${e.keyword} [${e.matchType}]`;
+        let detailHtml = `<p><strong>否定词:</strong> "${e.keyword}" [${e.matchType}]</p>
+          <p><strong>所在:</strong> ${e.campaign}${e.adGroup ? ' / ' + e.adGroup : ''} (${e.level}级)</p>
+          <p><strong>意图分类:</strong> <span style="color:${e._intent.color}">${e._intent.label}</span></p>`;
+        if (e._diags.length > 0) {
+          detailHtml += '<p><strong>诊断问题:</strong></p><ul style="margin:4px 0;padding-left:18px;font-size:12px;line-height:1.8;">';
+          e._diags.forEach(d => { detailHtml += `<li>${d.icon} ${d.label}: ${d.detail}</li>`; });
+          detailHtml += '</ul>';
+        } else {
+          detailHtml += '<p style="color:var(--green);">✅ 无异常</p>';
+        }
+        const stHtml = buildAffectedSTHtml(e.keyword, e.campaign, e.matchType);
+        openDiagDrawer(titleText, detailHtml, diagId, stHtml);
+      });
+    });
   }
 
   filterTable();

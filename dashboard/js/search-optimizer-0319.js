@@ -2893,14 +2893,98 @@ function renderNegKWCenter() {
     return html;
   }
 
+  function buildDiagContext(title, detail, extraHtml) {
+    let ctx = `## 当前诊断对象\n${title}\n\n## 诊断详情 (HTML转文本)\n`;
+    const tmp = document.createElement('div');
+    tmp.innerHTML = detail;
+    ctx += tmp.textContent + '\n';
+    if (extraHtml) {
+      tmp.innerHTML = extraHtml;
+      ctx += '\n## 受影响搜索词 / 附加数据\n' + tmp.textContent + '\n';
+    }
+    return ctx;
+  }
+
+  async function callGeminiAnalysis(userQuestion, diagContext, diagId, renderFn) {
+    const apiKey = localStorage.getItem('gemini_api_key');
+    if (!apiKey) {
+      addNote(diagId, '⚠️ 请先在左下角「AI 分析设置」中配置 Gemini API Key。', 'system');
+      renderFn();
+      return;
+    }
+    const model = localStorage.getItem('gemini_model') || 'gemini-2.5-flash';
+
+    const systemPrompt = `你是一个资深 Google Ads 搜索广告优化师AI助手。用户正在查看否定关键词诊断面板。
+你的职责：根据提供的诊断数据上下文，对用户的问题给出专业、精准、有数据支撑的判断和建议。
+回答要求：
+- 简洁直接，先给结论，再给理由
+- 结合提供的数据（花费、转化、ROAS、搜索词等）做定量分析
+- 给出可执行的操作建议（保留/删除/修改匹配类型等）
+- 如果数据不足以判断，明确说明需要额外看哪些数据
+- 用中文回答，语气专业但不啰嗦`;
+
+    const prompt = `${systemPrompt}\n\n---\n\n${diagContext}\n\n---\n\n用户问题: ${userQuestion}`;
+
+    addNote(diagId, '🤖 AI 分析中...', 'system');
+    renderFn();
+
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.3, maxOutputTokens: 1024 }
+        })
+      });
+
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        const errMsg = errData?.error?.message || `HTTP ${resp.status}`;
+        deleteLastSystemNote(diagId);
+        addNote(diagId, `❌ AI 调用失败: ${errMsg}`, 'system');
+        renderFn();
+        return;
+      }
+
+      const data = await resp.json();
+      const aiText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '（AI 未返回有效内容）';
+
+      deleteLastSystemNote(diagId);
+      addNote(diagId, `🤖 AI 分析:\n${aiText}`, 'system');
+      renderFn();
+      setTimeout(() => {
+        const thread = U.el('diag-note-thread');
+        if (thread) thread.scrollTop = thread.scrollHeight;
+      }, 50);
+    } catch (err) {
+      deleteLastSystemNote(diagId);
+      addNote(diagId, `❌ 网络错误: ${err.message}`, 'system');
+      renderFn();
+    }
+  }
+
+  function deleteLastSystemNote(diagId) {
+    const allNotes = loadNotes();
+    const notes = allNotes[diagId] || [];
+    for (let i = notes.length - 1; i >= 0; i--) {
+      if (notes[i].role === 'system') { notes.splice(i, 1); break; }
+    }
+    allNotes[diagId] = notes;
+    saveNotes(allNotes);
+  }
+
   function openDiagDrawer(title, detail, diagId, extraHtml) {
     const overlay = U.el('drawer-overlay');
     const drawer = U.el('kw-drawer');
     U.el('drawer-title').textContent = title;
     U.el('drawer-subtitle').textContent = '';
+    const diagContext = buildDiagContext(title, detail, extraHtml);
 
     function renderDrawerContent() {
       const notes = getNotes(diagId);
+      const hasKey = !!localStorage.getItem('gemini_api_key');
       let html = '';
       html += `<div class="drawer-section"><div class="drawer-section-title">🔍 诊断详情</div>`;
       html += `<div class="drawer-verdict"><div class="drawer-verdict-detail">${detail}</div></div></div>`;
@@ -2908,23 +2992,24 @@ function renderNegKWCenter() {
         html += `<div class="drawer-section">${extraHtml}</div>`;
       }
       html += `<div class="drawer-section"><div class="drawer-section-title">💬 备注与反馈 (${notes.length})</div>`;
-      html += `<div class="note-thread" id="diag-note-thread">`;
+      html += `<div class="note-thread" id="diag-note-thread" style="max-height:320px;overflow-y:auto;">`;
       notes.forEach((n, i) => {
         const time = new Date(n.ts).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
-        html += `<div class="note-bubble note-${n.role}">
+        const isAI = n.role === 'system' && n.text.startsWith('🤖');
+        html += `<div class="note-bubble note-${n.role}" ${isAI ? 'style="background:#f0f4ff;border:1px solid #bfdbfe;"' : ''}>
           <div>${n.text.replace(/\n/g, '<br>')}</div>
-          <div class="note-time">${n.role === 'user' ? '我' : '系统'} · ${time}
+          <div class="note-time">${n.role === 'user' ? '我' : isAI ? 'AI' : '系统'} · ${time}
             <button class="note-delete-btn" data-idx="${i}" title="删除">✕</button>
           </div>
         </div>`;
       });
       if (notes.length === 0) {
-        html += '<div class="muted" style="text-align:center;padding:16px;font-size:12px;">暂无备注，可以记录你的处理意见或反馈</div>';
+        html += '<div class="muted" style="text-align:center;padding:16px;font-size:12px;">输入问题，AI 会基于当前数据上下文给出分析判断</div>';
       }
       html += '</div>';
       html += `<div class="note-input-wrap">
-        <textarea class="note-input" id="diag-note-input" placeholder="输入备注或处理意见..." rows="2"></textarea>
-        <button class="note-send-btn" id="diag-note-send">发送</button>
+        <textarea class="note-input" id="diag-note-input" placeholder="${hasKey ? '输入问题，AI 会自动分析回答...' : '输入备注（配置 API Key 可启用 AI 分析）'}" rows="2"></textarea>
+        <button class="note-send-btn" id="diag-note-send">${hasKey ? '🤖 AI分析' : '发送'}</button>
       </div></div>`;
       U.html('drawer-body', html);
 
@@ -2933,11 +3018,16 @@ function renderNegKWCenter() {
         const text = input.value.trim();
         if (!text) return;
         addNote(diagId, text, 'user');
+        input.value = '';
         renderDrawerContent();
         setTimeout(() => {
           const thread = U.el('diag-note-thread');
           if (thread) thread.scrollTop = thread.scrollHeight;
         }, 50);
+
+        if (localStorage.getItem('gemini_api_key')) {
+          callGeminiAnalysis(text, diagContext, diagId, renderDrawerContent);
+        }
       });
 
       U.el('diag-note-input').addEventListener('keydown', (e) => {
@@ -3259,3 +3349,43 @@ function renderNegKWCenter() {
   U.el('negkw-c-filter-diag').addEventListener('change', filterTable);
   U.el('negkw-c-search').addEventListener('input', filterTable);
 }
+
+// ═══════════════════════════════════════
+// AI SETTINGS MODAL
+// ═══════════════════════════════════════
+(function initAISettings() {
+  const modal = U.el('ai-settings-modal');
+  const btnOpen = U.el('btn-ai-settings');
+  const btnClose = U.el('ai-settings-close');
+  const btnSave = U.el('ai-settings-save');
+  const keyInput = U.el('ai-gemini-key');
+  const modelSelect = U.el('ai-gemini-model');
+  const statusEl = U.el('ai-settings-status');
+  if (!modal || !btnOpen) return;
+
+  btnOpen.addEventListener('click', () => {
+    keyInput.value = localStorage.getItem('gemini_api_key') || '';
+    modelSelect.value = localStorage.getItem('gemini_model') || 'gemini-2.5-flash';
+    statusEl.textContent = keyInput.value ? '✅ 已配置' : '';
+    modal.style.display = 'flex';
+  });
+
+  btnClose.addEventListener('click', () => { modal.style.display = 'none'; });
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
+
+  btnSave.addEventListener('click', () => {
+    const key = keyInput.value.trim();
+    const model = modelSelect.value;
+    if (key) {
+      localStorage.setItem('gemini_api_key', key);
+      localStorage.setItem('gemini_model', model);
+      statusEl.textContent = '✅ 已保存！诊断面板的备注框现在支持 AI 分析。';
+      statusEl.style.color = '#10b981';
+    } else {
+      localStorage.removeItem('gemini_api_key');
+      statusEl.textContent = '已清除 API Key，AI 分析已关闭。';
+      statusEl.style.color = '#f59e0b';
+    }
+    setTimeout(() => { modal.style.display = 'none'; }, 1500);
+  });
+})();

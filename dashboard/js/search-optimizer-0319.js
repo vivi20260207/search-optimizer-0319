@@ -706,15 +706,76 @@ const RCA_NOTES_KEY = 'rca_diag_notes';
 function loadRCANotes() { try { return JSON.parse(localStorage.getItem(RCA_NOTES_KEY) || '{}'); } catch { return {}; } }
 function saveRCANotes(notes) { localStorage.setItem(RCA_NOTES_KEY, JSON.stringify(notes)); }
 function getRCANotes(aid) { return (loadRCANotes()[aid] || []).sort((a,b) => a.ts - b.ts); }
-function addRCANote(aid, text) {
+function addRCANote(aid, text, role) {
   const all = loadRCANotes();
   if (!all[aid]) all[aid] = [];
-  all[aid].push({ text, role: 'user', ts: Date.now() });
+  all[aid].push({ text, role: role || 'user', ts: Date.now() });
   saveRCANotes(all);
 }
 function deleteRCANote(aid, idx) {
   const all = loadRCANotes();
   if (all[aid]) { all[aid].splice(idx, 1); saveRCANotes(all); }
+}
+function deleteLastRCASystemNote(aid) {
+  const all = loadRCANotes();
+  const notes = all[aid] || [];
+  for (let i = notes.length - 1; i >= 0; i--) {
+    if (notes[i].role === 'system') { notes.splice(i, 1); break; }
+  }
+  all[aid] = notes;
+  saveRCANotes(all);
+}
+
+async function callGeminiForRCA(userQuestion, rcaContext, aid, renderFn) {
+  const apiKey = localStorage.getItem('gemini_api_key');
+  if (!apiKey) {
+    addRCANote(aid, '⚠️ 请先在左下角「AI 分析设置」中配置 Gemini API Key。', 'system');
+    renderFn();
+    return;
+  }
+  const model = localStorage.getItem('gemini_model') || 'gemini-2.5-flash';
+
+  const systemPrompt = `你是投放团队的优化师同事，直接说结论和操作建议，不要废话不要情绪价值。
+你的分析必须基于提供的数据（花费、CPA、ROAS、转化、搜索词等），给出量化判断。
+回答格式：
+1. 结论（一句话）
+2. 数据依据（列关键数字）
+3. 操作建议（具体到改什么、改多少）
+如果数据不够判断就直接说缺什么数据，不要瞎猜。用中文。`;
+
+  addRCANote(aid, '🤖 分析中...', 'system');
+  renderFn();
+
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `${systemPrompt}\n\n---\n\n${rcaContext}\n\n---\n\n优化师问: ${userQuestion}` }] }],
+        generationConfig: { temperature: 0.2, maxOutputTokens: 1024 }
+      })
+    });
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => ({}));
+      deleteLastRCASystemNote(aid);
+      addRCANote(aid, `❌ AI 调用失败: ${errData?.error?.message || 'HTTP ' + resp.status}`, 'system');
+      renderFn(); return;
+    }
+    const data = await resp.json();
+    const aiText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '（无返回）';
+    deleteLastRCASystemNote(aid);
+    addRCANote(aid, `🤖 ${aiText}`, 'system');
+    renderFn();
+    setTimeout(() => {
+      const thread = document.getElementById('rca-drawer-notes');
+      if (thread) thread.scrollTop = thread.scrollHeight;
+    }, 50);
+  } catch (err) {
+    deleteLastRCASystemNote(aid);
+    addRCANote(aid, `❌ 网络错误: ${err.message}`, 'system');
+    renderFn();
+  }
 }
 
 function renderRCANotesThread(aid, listIdx) {
@@ -791,22 +852,53 @@ function renderRootCause() {
   });
 }
 
+function buildRCAContext(anomaly, rcaSteps) {
+  let ctx = `## 异常类型: ${anomaly.type}\n## 严重程度: ${anomaly.severity}\n## 层级: ${anomaly.level}\n## 目标: ${anomaly.target || ''}\n\n`;
+  ctx += `## 异常描述\n${anomaly.desc}\n\n`;
+  ctx += `## 根因分析路径\n`;
+  rcaSteps.forEach(s => { ctx += `Step ${s.step}: [${s.status}] ${s.title} — ${s.detail}\n`; });
+
+  if (anomaly.campaign) {
+    const campName = typeof anomaly.campaign === 'string' ? anomaly.campaign : anomaly.campaign.name;
+    if (campName) {
+      const sts = ST_MAP[campName] || [];
+      if (sts.length > 0) {
+        const topST = sts.sort((a, b) => (b.cost || 0) - (a.cost || 0)).slice(0, 15);
+        ctx += `\n## 该Campaign Top搜索词（按花费排序）\n`;
+        topST.forEach(st => {
+          const roas = st.cost > 0 ? ((st.purchaseNewValue || 0) / st.cost).toFixed(2) : '0';
+          ctx += `- "${st.term}" | 花费:${Math.round(st.cost)} | 转化:${st.purchaseNew || 0} | ROAS:${roas}\n`;
+        });
+      }
+      const kws = KW_MAP[campName] || [];
+      if (kws.length > 0) {
+        const topKW = kws.sort((a, b) => (b.cost || 0) - (a.cost || 0)).slice(0, 10);
+        ctx += `\n## 该Campaign Top关键词\n`;
+        topKW.forEach(k => {
+          ctx += `- "${k.keyword}" [${k.matchType || ''}] | 花费:${Math.round(k.cost || 0)} | 转化:${k.conversions || 0} | CPC:${k.cpc || 0}\n`;
+        });
+      }
+    }
+  }
+  return ctx;
+}
+
 function openRCADrawer(anomaly, anomalyId, rcaSteps) {
   const overlay = U.el('drawer-overlay');
   const drawer = U.el('kw-drawer');
   const sevLabel = { critical: '🔴 紧急', warning: '🟡 警告', info: '💡 建议', positive: '🟢 亮点' };
   U.el('drawer-title').textContent = anomaly.title;
   U.el('drawer-subtitle').innerHTML = `${sevLabel[anomaly.severity] || ''} · ${anomaly.level} · ${anomaly.type.replace(/_/g, ' ')}`;
+  const rcaContext = buildRCAContext(anomaly, rcaSteps);
 
   function renderContent() {
     const notes = getRCANotes(anomalyId);
+    const hasKey = !!localStorage.getItem('gemini_api_key');
     let html = '';
 
-    // Description
     html += `<div class="drawer-section"><div class="drawer-section-title">📋 异常描述</div>
       <div class="drawer-verdict"><div class="drawer-verdict-detail">${anomaly.desc}</div></div></div>`;
 
-    // RCA Steps
     html += `<div class="drawer-section"><div class="drawer-section-title">🔍 根因分析路径</div>`;
     rcaSteps.forEach(step => {
       const stepColor = step.status === 'fail' ? 'var(--red)' : step.status === 'warn' ? 'var(--orange)' : step.status === 'pass' ? 'var(--green)' : 'var(--text3)';
@@ -820,17 +912,17 @@ function openRCADrawer(anomaly, anomalyId, rcaSteps) {
     });
     html += '</div>';
 
-    // Notes
     html += `<div class="drawer-section"><div class="drawer-section-title">💬 备注与反馈 (${notes.length})</div>`;
-    html += '<div class="note-thread" id="rca-drawer-notes" style="max-height:240px;overflow-y:auto;">';
+    html += '<div class="note-thread" id="rca-drawer-notes" style="max-height:320px;overflow-y:auto;">';
     if (notes.length === 0) {
-      html += '<div class="muted" style="text-align:center;padding:16px;font-size:12px;">暂无备注，可以记录你的处理意见或反馈</div>';
+      html += `<div class="muted" style="text-align:center;padding:16px;font-size:12px;">${hasKey ? '输入问题，AI 会基于异常数据直接给操作建议' : '输入备注（配置 API Key 可启用 AI 分析）'}</div>`;
     } else {
       notes.forEach((n, i) => {
         const time = new Date(n.ts).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
-        html += `<div class="note-bubble note-user">
+        const isAI = n.role === 'system' && n.text.startsWith('🤖');
+        html += `<div class="note-bubble note-${n.role}" ${isAI ? 'style="background:#f0f4ff;border:1px solid #bfdbfe;"' : ''}>
           <div>${n.text.replace(/\n/g, '<br>')}</div>
-          <div class="note-time">我 · ${time}
+          <div class="note-time">${n.role === 'user' ? '我' : isAI ? 'AI' : '系统'} · ${time}
             <button class="note-delete-btn rca-drawer-del" data-idx="${i}" title="删除">✕</button>
           </div>
         </div>`;
@@ -838,8 +930,8 @@ function openRCADrawer(anomaly, anomalyId, rcaSteps) {
     }
     html += '</div>';
     html += `<div class="note-input-wrap">
-      <textarea class="note-input" id="rca-drawer-input" placeholder="输入备注或处理意见..." rows="2"></textarea>
-      <button class="note-send-btn" id="rca-drawer-send">发送</button>
+      <textarea class="note-input" id="rca-drawer-input" placeholder="${hasKey ? '问 AI：这个异常怎么处理？' : '输入备注...'}" rows="2"></textarea>
+      <button class="note-send-btn" id="rca-drawer-send">${hasKey ? '🤖 AI分析' : '发送'}</button>
     </div></div>`;
 
     U.html('drawer-body', html);
@@ -848,13 +940,21 @@ function openRCADrawer(anomaly, anomalyId, rcaSteps) {
       const input = U.el('rca-drawer-input');
       const text = input.value.trim();
       if (!text) return;
-      addRCANote(anomalyId, text);
+      addRCANote(anomalyId, text, 'user');
+      input.value = '';
       renderContent();
       updateRCANoteIndicator(anomalyId);
       setTimeout(() => {
         const thread = document.getElementById('rca-drawer-notes');
         if (thread) thread.scrollTop = thread.scrollHeight;
       }, 50);
+
+      if (localStorage.getItem('gemini_api_key')) {
+        callGeminiForRCA(text, rcaContext, anomalyId, () => {
+          renderContent();
+          updateRCANoteIndicator(anomalyId);
+        });
+      }
     });
 
     U.el('rca-drawer-input').addEventListener('keydown', (e) => {
@@ -2914,14 +3014,13 @@ function renderNegKWCenter() {
     }
     const model = localStorage.getItem('gemini_model') || 'gemini-2.5-flash';
 
-    const systemPrompt = `你是一个资深 Google Ads 搜索广告优化师AI助手。用户正在查看否定关键词诊断面板。
-你的职责：根据提供的诊断数据上下文，对用户的问题给出专业、精准、有数据支撑的判断和建议。
-回答要求：
-- 简洁直接，先给结论，再给理由
-- 结合提供的数据（花费、转化、ROAS、搜索词等）做定量分析
-- 给出可执行的操作建议（保留/删除/修改匹配类型等）
-- 如果数据不足以判断，明确说明需要额外看哪些数据
-- 用中文回答，语气专业但不啰嗦`;
+    const systemPrompt = `你是投放团队的优化师同事，直接说结论和操作建议，不要废话不要情绪价值。
+你正在看否定关键词诊断数据，基于提供的数据（花费、转化、ROAS、搜索词等）做量化判断。
+回答格式：
+1. 结论（一句话）
+2. 数据依据（列关键数字）
+3. 操作建议（具体到改什么、改多少）
+如果数据不够判断就直接说缺什么数据，不要瞎猜。用中文。`;
 
     const prompt = `${systemPrompt}\n\n---\n\n${diagContext}\n\n---\n\n用户问题: ${userQuestion}`;
 

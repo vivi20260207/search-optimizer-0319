@@ -701,6 +701,68 @@ function renderDrillDown() {
 // ═══════════════════════════════════════
 let ALL_ANOMALIES = [];
 
+// ── RCA Notes Storage (localStorage) ──
+const RCA_NOTES_KEY = 'rca_diag_notes';
+function loadRCANotes() { try { return JSON.parse(localStorage.getItem(RCA_NOTES_KEY) || '{}'); } catch { return {}; } }
+function saveRCANotes(notes) { localStorage.setItem(RCA_NOTES_KEY, JSON.stringify(notes)); }
+function getRCANotes(aid) { return (loadRCANotes()[aid] || []).sort((a,b) => a.ts - b.ts); }
+function addRCANote(aid, text) {
+  const all = loadRCANotes();
+  if (!all[aid]) all[aid] = [];
+  all[aid].push({ text, role: 'user', ts: Date.now() });
+  saveRCANotes(all);
+}
+function deleteRCANote(aid, idx) {
+  const all = loadRCANotes();
+  if (all[aid]) { all[aid].splice(idx, 1); saveRCANotes(all); }
+}
+
+function renderRCANotesThread(aid, listIdx) {
+  const notes = getRCANotes(aid);
+  const container = document.getElementById('rca-notes-' + listIdx);
+  if (!container) return;
+  let html = '';
+  if (notes.length === 0) {
+    html = '<div class="muted" style="text-align:center;padding:10px;font-size:12px;">暂无备注</div>';
+  } else {
+    notes.forEach((n, i) => {
+      const time = new Date(n.ts).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
+      html += `<div class="note-bubble note-user">
+        <div>${n.text.replace(/\n/g, '<br>')}</div>
+        <div class="note-time">我 · ${time}
+          <button class="note-delete-btn rca-note-del" data-aid="${aid}" data-note-idx="${i}" data-list-idx="${listIdx}" title="删除">✕</button>
+        </div>
+      </div>`;
+    });
+  }
+  container.innerHTML = html;
+
+  container.querySelectorAll('.rca-note-del').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteRCANote(btn.dataset.aid, parseInt(btn.dataset.noteIdx));
+      renderRCANotesThread(btn.dataset.aid, parseInt(btn.dataset.listIdx));
+      updateRCANoteIndicator(btn.dataset.aid);
+    });
+  });
+}
+
+function updateRCANoteIndicator(aid) {
+  const card = document.querySelector(`.anomaly-card[data-anomaly-id="${aid}"]`);
+  if (!card) return;
+  const titleEl = card.querySelector('.anomaly-title');
+  if (!titleEl) return;
+  const existing = titleEl.querySelector('span');
+  if (existing) existing.remove();
+  const notes = getRCANotes(aid);
+  if (notes.length > 0) {
+    const span = document.createElement('span');
+    span.style.cssText = 'font-size:11px;margin-left:8px;';
+    span.textContent = `💬 ${notes.length}`;
+    titleEl.appendChild(span);
+  }
+}
+
 function renderRootCause() {
   ALL_ANOMALIES = Engine.detectAnomalies(SEARCH_CAMPS, KW_MAP, ST_MAP, DEV_MAP);
 
@@ -747,11 +809,15 @@ function renderAnomalyList(filter) {
       </div>`;
     });
 
-    html += `<div class="anomaly-card sev-${a.severity}" data-idx="${i}" onclick="toggleAnomaly(this)">
+    const anomalyId = `rca__${(a.title||'').substring(0,40).replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g,'_')}__${i}`;
+    const existingNotes = getRCANotes(anomalyId);
+    const noteIndicator = existingNotes.length > 0 ? `<span style="font-size:11px;margin-left:8px;">💬 ${existingNotes.length}</span>` : '';
+
+    html += `<div class="anomaly-card sev-${a.severity}" data-idx="${i}" data-anomaly-id="${anomalyId}" onclick="toggleAnomaly(this)">
       <div class="anomaly-header">
         <div class="anomaly-sev">${sevIcon[a.severity] || '⚪'}</div>
         <div class="anomaly-info">
-          <div class="anomaly-title">${a.title}</div>
+          <div class="anomaly-title">${a.title}${noteIndicator}</div>
           <div class="anomaly-desc">${a.desc}</div>
           <div class="anomaly-meta">
             ${U.badge(a.level, 'neutral')}
@@ -762,12 +828,51 @@ function renderAnomalyList(filter) {
       </div>
       <div class="anomaly-body">
         <div class="rca-steps">${rcaHtml}</div>
+        <div class="rca-notes-section" data-aid="${anomalyId}">
+          <div class="drawer-section-title" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-light);">💬 备注与反馈</div>
+          <div class="note-thread rca-note-thread" id="rca-notes-${i}" style="max-height:200px;overflow-y:auto;"></div>
+          <div class="note-input-wrap">
+            <textarea class="note-input rca-note-input" placeholder="记录处理意见或反馈..." rows="2" data-aid="${anomalyId}" data-list-idx="${i}"></textarea>
+            <button class="note-send-btn rca-note-send" data-aid="${anomalyId}" data-list-idx="${i}">发送</button>
+          </div>
+        </div>
       </div>
     </div>`;
   });
 
   if (!html) html = '<div class="trust-card trust-ok"><div class="trust-title">无异常</div><div class="trust-detail">该分类下暂无检测到的异常。</div></div>';
   U.html('anomaly-list', html);
+
+  // Render all note threads and bind events
+  document.querySelectorAll('.rca-note-send').forEach(btn => {
+    const aid = btn.dataset.aid;
+    const listIdx = parseInt(btn.dataset.listIdx);
+    renderRCANotesThread(aid, listIdx);
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const input = document.querySelector(`.rca-note-input[data-aid="${aid}"]`);
+      const text = input ? input.value.trim() : '';
+      if (!text) return;
+      addRCANote(aid, text);
+      input.value = '';
+      renderRCANotesThread(aid, listIdx);
+      updateRCANoteIndicator(aid);
+    });
+  });
+
+  document.querySelectorAll('.rca-note-input').forEach(input => {
+    input.addEventListener('click', (e) => e.stopPropagation());
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        const aid = input.dataset.aid;
+        const btn = document.querySelector(`.rca-note-send[data-aid="${aid}"]`);
+        if (btn) btn.click();
+      }
+    });
+  });
 }
 
 function toggleAnomaly(card) {

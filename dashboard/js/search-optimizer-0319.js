@@ -2045,25 +2045,85 @@ function renderAdPolicy() {
 // ═══════════════════════════════════════
 // 广告文案分析 (Ad Copy)
 // ═══════════════════════════════════════
+let adcopySortCol = 'conversions';
+let adcopySortDesc = true;
+
 function initAdCopyModule() {
   if (typeof ADW_ALL_ASSETS === 'undefined') return;
 
+  U.el('adcopy-camptype-select').addEventListener('change', renderAdCopy);
   U.el('adcopy-geo-select').addEventListener('change', renderAdCopy);
   U.el('adcopy-type-select').addEventListener('change', renderAdCopy);
 
+  // Sorting listeners
+  document.querySelectorAll('#view-ad-copy .sortable').forEach(th => {
+    th.addEventListener('click', (e) => {
+      const col = e.currentTarget.dataset.sort;
+      if (adcopySortCol === col) {
+        adcopySortDesc = !adcopySortDesc;
+      } else {
+        adcopySortCol = col;
+        adcopySortDesc = true;
+      }
+      renderAdCopy();
+    });
+  });
+
+  // Popover listener
+  document.addEventListener('click', (e) => {
+    const badge = e.target.closest('.adcopy-camp-count');
+    if (badge) {
+      showCampPopover(badge, JSON.parse(badge.dataset.camps));
+      e.stopPropagation();
+    } else {
+      hideCampPopover();
+    }
+  });
+
   renderAdCopy();
+}
+
+function showCampPopover(el, camps) {
+  let pop = document.getElementById('adcopy-popover');
+  if (!pop) {
+    pop = document.createElement('div');
+    pop.id = 'adcopy-popover';
+    pop.className = 'adcopy-popover';
+    document.body.appendChild(pop);
+  }
+  const rect = el.getBoundingClientRect();
+  pop.innerHTML = `<strong>覆盖的 Campaign (${camps.length})</strong><div class="popover-list">${camps.map(c => `<div>${U.campShortName(c)}</div>`).join('')}</div>`;
+  pop.style.display = 'block';
+  
+  // Calculate position
+  const popRect = pop.getBoundingClientRect();
+  let top = rect.bottom + window.scrollY + 8;
+  let left = rect.left + window.scrollX - popRect.width + rect.width;
+  
+  pop.style.top = top + 'px';
+  pop.style.left = left + 'px';
+}
+
+function hideCampPopover() {
+  const pop = document.getElementById('adcopy-popover');
+  if (pop) pop.style.display = 'none';
 }
 
 function renderAdCopy() {
   if (typeof ADW_ALL_ASSETS === 'undefined') return;
 
+  const campType = U.el('adcopy-camptype-select').value;
   const geo  = U.el('adcopy-geo-select').value;
   const type = U.el('adcopy-type-select').value;
 
   let filtered = ADW_ALL_ASSETS.filter(a => {
-    if (geo === 'in'    && !a.campaign.toLowerCase().includes('-in-')) return false;
-    if (geo === 'us_uk' && !a.campaign.toLowerCase().includes('-us-') && !a.campaign.toLowerCase().includes('-uk-')) return false;
-    if (geo === 'me'    && !a.campaign.toLowerCase().includes('ar+uae')) return false;
+    const lower = a.campaign.toLowerCase();
+    const isDisplay = lower.includes('display') || lower.includes('pmax');
+    if (campType === 'search'  && isDisplay) return false;
+    if (campType === 'display' && !isDisplay) return false;
+    if (geo === 'in'    && !lower.includes('-in-')) return false;
+    if (geo === 'us_uk' && !lower.includes('-us-') && !lower.includes('-uk-')) return false;
+    if (geo === 'me'    && !lower.includes('ar+uae')) return false;
     if (type !== 'all'  && a.type !== type) return false;
     return true;
   });
@@ -2090,8 +2150,32 @@ function renderAdCopy() {
     }
   });
 
-  const results = Object.values(aggMap).sort((a, b) => b.conversions - a.conversions || b.cost - a.cost);
-  const maxConv = results.length ? results[0].conversions : 1;
+  let results = Object.values(aggMap).map(r => {
+    r.ctr = r.impressions > 0 ? (r.clicks / r.impressions * 100) : 0;
+    r.cpa = r.conversions > 0 ? r.cost / r.conversions : 0;
+    r.roas = r.cost > 0 ? r.revenue / r.cost : 0;
+    r.coverage = r.camps.size;
+    return r;
+  });
+
+  // Apply Sorting
+  results.sort((a, b) => {
+    let valA = a[adcopySortCol];
+    let valB = b[adcopySortCol];
+    if (valA < valB) return adcopySortDesc ? 1 : -1;
+    if (valA > valB) return adcopySortDesc ? -1 : 1;
+    return 0;
+  });
+
+  // Update Table Headers
+  document.querySelectorAll('#view-ad-copy .sortable').forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+    if (th.dataset.sort === adcopySortCol) {
+      th.classList.add(adcopySortDesc ? 'sort-desc' : 'sort-asc');
+    }
+  });
+
+  const maxConv = results.length ? Math.max(...results.map(r => r.conversions)) : 1;
 
   const totalConv = results.reduce((s, r) => s + r.conversions, 0);
   const totalCost = results.reduce((s, r) => s + r.cost, 0);
@@ -2133,9 +2217,9 @@ function renderAdCopy() {
 
   let html = '';
   results.forEach((r, idx) => {
-    const ctr  = r.impressions > 0 ? (r.clicks / r.impressions * 100) : 0;
-    const cpa  = r.conversions > 0 ? r.cost / r.conversions : 0;
-    const roas = r.cost > 0 ? r.revenue / r.cost : 0;
+    const ctr  = r.ctr;
+    const cpa  = r.cpa;
+    const roas = r.roas;
     const barW = maxConv > 0 ? Math.max(2, r.conversions / maxConv * 100) : 0;
 
     let perfHtml;
@@ -2145,6 +2229,7 @@ function renderAdCopy() {
     else                                perfHtml = '<span class="muted">--</span>';
 
     const typeBg = r.type === '标题' ? 'background:#f0f4ff;color:#4f46e5' : 'background:#fdf4ff;color:#9333ea';
+    const campsJson = JSON.stringify(Array.from(r.camps).sort());
 
     html += `<tr>
       <td style="max-width:320px;white-space:normal;line-height:1.6">
@@ -2160,7 +2245,7 @@ function renderAdCopy() {
       <td class="num">${U.fmtK(r.impressions)}</td>
       <td class="num">${U.fmtK(r.clicks)}</td>
       <td class="num">${U.fmtPct(ctr)}</td>
-      <td class="num"><span class="adcopy-camp-count">${r.camps.size}</span></td>
+      <td class="num"><span class="adcopy-camp-count" data-camps='${campsJson}'>${r.coverage}</span></td>
     </tr>`;
   });
 
@@ -2179,7 +2264,35 @@ function formatChangeDetail(entry) {
       return entry.changedFields.map(f => `<span class="muted">${f.split('.').pop()}</span>`).join(', ');
     return `<span class="muted">${entry.operation}</span>`;
   }
-  return entry.details.map(d => {
+
+  if (entry.resourceType === 'Campaign否定词') {
+    const dMap = {};
+    entry.details.forEach(d => { dMap[d.field] = d; });
+    const sub = entry.negSubType || '';
+    const kw = (dMap.text && dMap.text.new) ? dMap.text.new : '';
+    const mt = (dMap.match_type && dMap.match_type.new) ? dMap.match_type.new : '';
+    const label = (dMap.type && dMap.type.new) ? dMap.type.new : '';
+
+    if (kw) {
+      return `<span class="badge badge-bad" style="font-size:10px;">否定词</span> <span class="cl-new" style="font-weight:600;">${kw}</span>` +
+        (mt ? ` <span class="muted" style="font-size:11px;">[${mt}]</span>` : '');
+    }
+    if (sub === '排除内容标签' && label) {
+      return `<span class="badge badge-neutral" style="font-size:10px;">内容标签</span> <span class="cl-new">${label.replace(/_/g, ' ')}</span>`;
+    }
+    if (sub) {
+      const statusD = dMap.status;
+      if (statusD && statusD.old && !statusD.new)
+        return `<span class="badge badge-neutral" style="font-size:10px;">${sub}</span> <span class="muted">已移除</span>`;
+      return `<span class="badge badge-neutral" style="font-size:10px;">${sub}</span>`;
+    }
+  }
+
+  const skip = new Set(['campaign', 'criterion_id', 'resource_name', 'negative']);
+  const meaningful = entry.details.filter(d => !skip.has(d.field) && (d.old || d.new));
+  const list = meaningful.length > 0 ? meaningful : entry.details.filter(d => !skip.has(d.field));
+
+  return list.map(d => {
     const field = d.field || '?';
     if (d.old && d.new) return `<span class="cl-field">${field}</span>: <span class="cl-old">${d.old}</span> → <span class="cl-new">${d.new}</span>`;
     if (d.new) return `<span class="cl-field">${field}</span>: <span class="cl-new">${d.new}</span>`;
@@ -2242,12 +2355,21 @@ function renderChangeLog() {
     <div class="kpi-card"><div class="kpi-label">移除</div><div class="kpi-value clr-bad">${opCount['移除'] || 0}</div></div>
   `);
 
+  // Initialize date range from data
+  const allDates = CHANGE_LOG.map(e => (e.dateTime || '').slice(0, 10)).filter(Boolean).sort();
+  if (allDates.length > 0) {
+    U.el('cl-filter-date-start').value = allDates[0];
+    U.el('cl-filter-date-end').value = allDates[allDates.length - 1];
+  }
+
   filterChangeLog();
 
   campFilter.addEventListener('change', filterChangeLog);
   U.el('cl-filter-type').addEventListener('change', filterChangeLog);
   U.el('cl-filter-op').addEventListener('change', filterChangeLog);
   U.el('cl-search').addEventListener('input', filterChangeLog);
+  U.el('cl-filter-date-start').addEventListener('change', filterChangeLog);
+  U.el('cl-filter-date-end').addEventListener('change', filterChangeLog);
 }
 
 function filterChangeLog() {
@@ -2255,11 +2377,32 @@ function filterChangeLog() {
   const typeVal = U.el('cl-filter-type').value;
   const opVal = U.el('cl-filter-op').value;
   const searchVal = U.el('cl-search').value.trim().toLowerCase();
+  const dateStart = U.el('cl-filter-date-start').value;
+  const dateEnd = U.el('cl-filter-date-end').value;
 
   let filtered = CHANGE_LOG;
   if (campVal !== 'all') filtered = filtered.filter(e => e.campaign === campVal);
-  if (typeVal !== 'all') filtered = filtered.filter(e => e.resourceType === typeVal);
+  if (typeVal !== 'all') {
+    const negSubMap = {
+      'neg-kw': '否定关键词', 'neg-app-cat': '排除App类别',
+      'neg-content': '排除内容标签', 'neg-placement': '排除展示位置',
+      'neg-other': '_other_'
+    };
+    if (negSubMap[typeVal]) {
+      const sub = negSubMap[typeVal];
+      if (sub === '_other_') {
+        filtered = filtered.filter(e => e.resourceType === 'Campaign否定词' &&
+          !['否定关键词','排除App类别','排除内容标签','排除展示位置'].includes(e.negSubType || ''));
+      } else {
+        filtered = filtered.filter(e => e.resourceType === 'Campaign否定词' && e.negSubType === sub);
+      }
+    } else {
+      filtered = filtered.filter(e => e.resourceType === typeVal);
+    }
+  }
   if (opVal !== 'all') filtered = filtered.filter(e => e.operation === opVal);
+  if (dateStart) filtered = filtered.filter(e => (e.dateTime || '').slice(0, 10) >= dateStart);
+  if (dateEnd) filtered = filtered.filter(e => (e.dateTime || '').slice(0, 10) <= dateEnd);
   if (searchVal.length >= 2) {
     filtered = filtered.filter(e =>
       (e.campaign || '').toLowerCase().includes(searchVal) ||
@@ -2277,7 +2420,7 @@ function filterChangeLog() {
       <td style="font-size:10px;">${e.clientType || '--'}</td>
       <td class="bold" title="${e.campaign}">${U.campShortName(e.campaign || '--')}</td>
       <td class="muted">${e.adGroup || '--'}</td>
-      <td>${typeBadge(e.resourceType)}</td>
+      <td>${typeBadge(e.resourceType)}${e.negSubType ? '<br><span class="muted" style="font-size:10px;">'+e.negSubType+'</span>' : ''}</td>
       <td>${opBadge(e.operation)}</td>
       <td style="font-size:12px;white-space:normal;max-width:350px;">${formatChangeDetail(e)}</td>
     </tr>`;

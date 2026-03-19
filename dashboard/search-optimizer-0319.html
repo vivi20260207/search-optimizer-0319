@@ -316,6 +316,14 @@
 
       <div class="adcopy-filters">
         <div class="adcopy-filter-item">
+          <span class="adcopy-filter-label">📢 广告类型</span>
+          <select id="adcopy-camptype-select" class="adcopy-select">
+            <option value="all">全部</option>
+            <option value="search" selected>Search</option>
+            <option value="display">Display</option>
+          </select>
+        </div>
+        <div class="adcopy-filter-item">
           <span class="adcopy-filter-label">🌍 国家盘</span>
           <select id="adcopy-geo-select" class="adcopy-select">
             <option value="all">全部</option>
@@ -348,14 +356,14 @@
                 <th style="min-width:260px">文案内容</th>
                 <th>类型</th>
                 <th>评级</th>
-                <th class="num">转化 ▼</th>
-                <th class="num">花费</th>
-                <th class="num">CPA</th>
-                <th class="num">ROAS</th>
-                <th class="num">曝光</th>
-                <th class="num">点击</th>
-                <th class="num">CTR</th>
-                <th class="num">覆盖</th>
+                <th class="num sortable" data-sort="conversions">转化</th>
+                <th class="num sortable" data-sort="cost">花费</th>
+                <th class="num sortable" data-sort="cpa">CPA</th>
+                <th class="num sortable" data-sort="roas">ROAS</th>
+                <th class="num sortable" data-sort="impressions">曝光</th>
+                <th class="num sortable" data-sort="clicks">点击</th>
+                <th class="num sortable" data-sort="ctr">CTR</th>
+                <th class="num sortable" data-sort="coverage">覆盖</th>
               </tr>
             </thead>
             <tbody id="adcopy-tbody"></tbody>
@@ -551,27 +559,40 @@
       </div>
       <div id="changelog-kpis" class="kpi-grid kpi-grid-5"></div>
       <div class="card" style="margin-bottom:16px;">
-        <div class="card-header" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-          <h3 style="margin:0;">变更记录</h3>
-          <select id="cl-filter-camp" class="camp-select" style="max-width:220px;">
-            <option value="all">全部 Campaign</option>
-          </select>
-          <select id="cl-filter-type" class="camp-select" style="max-width:150px;">
-            <option value="all">全部实体</option>
-            <option value="Campaign">Campaign</option>
-            <option value="广告组">广告组</option>
-            <option value="关键词">关键词</option>
-            <option value="广告">广告</option>
-            <option value="预算">预算</option>
-            <option value="Campaign否定词">否定词</option>
-          </select>
-          <select id="cl-filter-op" class="camp-select" style="max-width:130px;">
-            <option value="all">全部操作</option>
-            <option value="新建">新建</option>
-            <option value="修改">修改</option>
-            <option value="移除">移除</option>
-          </select>
-          <input type="text" id="cl-search" class="cluster-search-input" placeholder="搜索 Campaign / 广告组 / 操作人..." style="max-width:250px;">
+        <div class="card-header" style="display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <h3 style="margin:0;">变更记录</h3>
+            <select id="cl-filter-camp" class="camp-select" style="max-width:220px;">
+              <option value="all">全部 Campaign</option>
+            </select>
+            <select id="cl-filter-type" class="camp-select" style="max-width:180px;">
+              <option value="all">全部实体</option>
+              <option value="Campaign">Campaign</option>
+              <option value="广告组">广告组</option>
+              <option value="关键词">关键词</option>
+              <option value="广告">广告</option>
+              <option value="预算">预算</option>
+              <option value="Campaign否定词">所有排除项</option>
+              <option value="neg-kw">↳ 否定关键词</option>
+              <option value="neg-app-cat">↳ 排除App类别</option>
+              <option value="neg-content">↳ 排除内容标签</option>
+              <option value="neg-placement">↳ 排除展示位置</option>
+              <option value="neg-other">↳ 其他排除</option>
+            </select>
+            <select id="cl-filter-op" class="camp-select" style="max-width:130px;">
+              <option value="all">全部操作</option>
+              <option value="新建">新建</option>
+              <option value="修改">修改</option>
+              <option value="移除">移除</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <span style="font-size:12px;color:#6b7280;">📅 日期范围</span>
+            <input type="date" id="cl-filter-date-start" class="camp-select" style="max-width:160px;" title="开始日期">
+            <span style="font-size:12px;color:#6b7280;">至</span>
+            <input type="date" id="cl-filter-date-end" class="camp-select" style="max-width:160px;" title="结束日期">
+            <input type="text" id="cl-search" class="cluster-search-input" placeholder="搜索 Campaign / 广告组 / 操作人..." style="max-width:280px;margin-left:auto;">
+          </div>
         </div>
         <div class="card-body-flush table-wrap" style="max-height:calc(100vh - 280px);overflow-y:auto;">
           <table>
@@ -599,9 +620,9 @@
 <script src="js/adw_data_daily.js"></script>
 <script src="js/adw_data_st.js"></script>
 <script src="js/adw_data_assets.js"></script>
-<script src="js/adw_data_changelog.js"></script>
+<script src="js/adw_data_changelog.js?v=20260319b"></script>
 <script src="js/utils-0319.js"></script>
 <script src="js/engine-0319.js"></script>
-<script src="js/search-optimizer-0319.js"></script>
+<script src="js/search-optimizer-0319.js?v=20260319b"></script>
 </body>
 </html>

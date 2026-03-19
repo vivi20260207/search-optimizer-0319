@@ -122,6 +122,48 @@ def extract_detail(ce):
                 if "status" in f:
                     old_val = old_r.ad_group_ad.status.name if old_r and old_r.ad_group_ad and old_r.ad_group_ad.status else ""
                     new_val = new_r.ad_group_ad.status.name if new_r and new_r.ad_group_ad and new_r.ad_group_ad.status else ""
+            elif rt == "CAMPAIGN_CRITERION":
+                cc_old = old_r.campaign_criterion if old_r else None
+                cc_new = new_r.campaign_criterion if new_r else None
+                if "keyword" in f:
+                    kw_old = cc_old.keyword if cc_old and hasattr(cc_old, 'keyword') and cc_old.keyword else None
+                    kw_new = cc_new.keyword if cc_new and hasattr(cc_new, 'keyword') and cc_new.keyword else None
+                    if "text" in f:
+                        old_val = kw_old.text if kw_old and kw_old.text else ""
+                        new_val = kw_new.text if kw_new and kw_new.text else ""
+                    elif "match_type" in f:
+                        mt_map = {"EXACT": "完全匹配", "PHRASE": "词组匹配", "BROAD": "广泛匹配"}
+                        old_val = mt_map.get(kw_old.match_type.name, kw_old.match_type.name) if kw_old and kw_old.match_type else ""
+                        new_val = mt_map.get(kw_new.match_type.name, kw_new.match_type.name) if kw_new and kw_new.match_type else ""
+                elif "status" in f:
+                    old_val = cc_old.status.name if cc_old and cc_old.status else ""
+                    new_val = cc_new.status.name if cc_new and cc_new.status else ""
+                elif "negative" in f:
+                    old_val = "是" if cc_old and cc_old.negative else ""
+                    new_val = "是" if cc_new and cc_new.negative else ""
+                elif "content_label" in f:
+                    old_val = cc_old.content_label.type_.name if cc_old and hasattr(cc_old, 'content_label') and cc_old.content_label and cc_old.content_label.type_ else ""
+                    new_val = cc_new.content_label.type_.name if cc_new and hasattr(cc_new, 'content_label') and cc_new.content_label and cc_new.content_label.type_ else ""
+                elif "mobile_app_category" in f:
+                    try:
+                        old_val = str(cc_old.mobile_app_category.mobile_app_category_constant) if cc_old and hasattr(cc_old, 'mobile_app_category') and cc_old.mobile_app_category and cc_old.mobile_app_category.mobile_app_category_constant else ""
+                        new_val = str(cc_new.mobile_app_category.mobile_app_category_constant) if cc_new and hasattr(cc_new, 'mobile_app_category') and cc_new.mobile_app_category and cc_new.mobile_app_category.mobile_app_category_constant else ""
+                    except: pass
+                elif "placement" in f:
+                    try:
+                        old_val = cc_old.placement.url if cc_old and hasattr(cc_old, 'placement') and cc_old.placement else ""
+                        new_val = cc_new.placement.url if cc_new and hasattr(cc_new, 'placement') and cc_new.placement else ""
+                    except: pass
+                elif "gender" in f:
+                    try:
+                        old_val = cc_old.gender.type_.name if cc_old and hasattr(cc_old, 'gender') and cc_old.gender and cc_old.gender.type_ else ""
+                        new_val = cc_new.gender.type_.name if cc_new and hasattr(cc_new, 'gender') and cc_new.gender and cc_new.gender.type_ else ""
+                    except: pass
+                elif "mobile_application" in f:
+                    try:
+                        old_val = cc_old.mobile_application.app_id if cc_old and hasattr(cc_old, 'mobile_application') and cc_old.mobile_application else ""
+                        new_val = cc_new.mobile_application.app_id if cc_new and hasattr(cc_new, 'mobile_application') and cc_new.mobile_application else ""
+                    except: pass
             elif rt == "CAMPAIGN_BUDGET":
                 if "amount_micros" in f:
                     old_val = str(micros(old_r.campaign_budget.amount_micros)) if old_r and old_r.campaign_budget and old_r.campaign_budget.amount_micros else ""
@@ -135,20 +177,37 @@ def extract_detail(ce):
 
     return details
 
+def neg_sub_type(fields):
+    """Determine the sub-type of a Campaign Criterion from its changed fields."""
+    joined = " ".join(fields)
+    if "keyword.text" in joined: return "否定关键词"
+    if "mobile_app_category" in joined: return "排除App类别"
+    if "content_label" in joined: return "排除内容标签"
+    if "placement" in joined: return "排除展示位置"
+    if "gender" in joined: return "排除性别"
+    if "user_list" in joined: return "排除受众"
+    if "mobile_application" in joined: return "排除App"
+    return ""
+
 def parse(row):
     ce = row.change_event
-    return {
+    fields = list(ce.changed_fields.paths) if ce.changed_fields and ce.changed_fields.paths else []
+    rt = resource_type_label(ce.change_resource_type)
+    rec = {
         "dateTime": ce.change_date_time if ce.change_date_time else "",
         "campaign": row.campaign.name if row.campaign else "",
         "adGroup": row.ad_group.name if row.ad_group and row.ad_group.name else "",
-        "resourceType": resource_type_label(ce.change_resource_type),
+        "resourceType": rt,
         "operation": operation_label(ce.resource_change_operation),
         "userEmail": ce.user_email if ce.user_email else "",
         "clientType": client_type_label(ce.client_type),
-        "changedFields": list(ce.changed_fields.paths) if ce.changed_fields and ce.changed_fields.paths else [],
+        "changedFields": fields,
         "details": extract_detail(ce),
         "resourceName": ce.resource_name if ce.resource_name else "",
     }
+    if rt == "Campaign否定词":
+        rec["negSubType"] = neg_sub_type(fields)
+    return rec
 
 def main():
     client = make_client()

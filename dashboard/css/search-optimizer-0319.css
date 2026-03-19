@@ -884,7 +884,33 @@ td.num { font-variant-numeric: tabular-nums; }
   border-radius: 10px;
   font-size: 11px;
   font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.1s, background 0.2s;
 }
+.adcopy-camp-count:hover { transform: scale(1.1); background: var(--accent); color: white; }
+
+.sortable { cursor: pointer; user-select: none; transition: background 0.2s; }
+.sortable:hover { background: var(--bg-alt); }
+.sortable::after { content: ' \21C5'; opacity: 0.3; font-size: 10px; margin-left: 4px; }
+.sortable.sort-asc::after { content: ' \25B2'; opacity: 1; color: var(--accent); }
+.sortable.sort-desc::after { content: ' \25BC'; opacity: 1; color: var(--accent); }
+
+.adcopy-popover {
+  position: absolute;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 12px;
+  z-index: 1000;
+  display: none;
+  min-width: 200px;
+  max-width: 300px;
+  font-size: 12px;
+}
+.adcopy-popover strong { display: block; margin-bottom: 8px; color: var(--text); border-bottom: 1px solid var(--border-light); padding-bottom: 4px; }
+.adcopy-popover .popover-list { max-height: 200px; overflow-y: auto; }
+.adcopy-popover .popover-list div { padding: 4px 0; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ─── Responsive ─── */
 /* ─── Change Log ─── */

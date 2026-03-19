@@ -14,23 +14,40 @@ OUTPUT_PATH = "dashboard/js/adw_data_app_changelog.js"
 START_DATE = "2026-02-19"
 END_DATE   = "2026-03-19"
 
-ACCOUNTS = [
-    "4720551746",  # Find Mate-IN-01
-    "9956162596",  # G-Max Security-0714-01
-    "8183373292",  # G-Weather Mate-IN-02
-    "8719323356",  # GPS Share-IN-01
-    "9723856754",  # KeepClean_HK_1
-    "3401728768",  # KeepClean_HK_2
-    "1384163864",  # Local Weather-HK-1
-    "4317744776",  # Local Weather-IN-01
-    "6656007143",  # MaxSecurity_IN_02
-    "2579044998",  # MyHealth_HK_1
-    "2376715297",  # Storage Clean-IN-01
-    "8799953811",  # Weather Pro-IN-01
+MCC_CONFIGS = [
+    "google-ads-app.yaml",           # MCC 7767893962
+    "google-ads-mcc-5100780984.yaml", # MCC 5100780984
+    "google-ads-mcc-7534035699.yaml", # MCC 7534035699
+    "google-ads-mcc-3094233805.yaml", # MCC 3094233805
+    "google-ads-mcc-8009156492.yaml", # MCC 8009156492
 ]
 
-def make_client():
-    return GoogleAdsClient.load_from_storage("google-ads-app.yaml")
+def make_client(config_path="google-ads-app.yaml"):
+    return GoogleAdsClient.load_from_storage(config_path)
+
+def discover_accounts(config_path):
+    """List all non-manager child accounts under an MCC."""
+    import yaml
+    with open(config_path) as f:
+        conf = yaml.safe_load(f)
+    login_id = str(conf.get("login_customer_id", ""))
+    client = make_client(config_path)
+    ga = client.get_service("GoogleAdsService")
+    query = """
+    SELECT customer_client.id, customer_client.descriptive_name,
+           customer_client.manager
+    FROM customer_client
+    WHERE customer_client.status = 'ENABLED' AND customer_client.manager = FALSE
+    """
+    accounts = []
+    try:
+        results = ga.search(customer_id=login_id, query=query)
+        for row in results:
+            cc = row.customer_client
+            accounts.append((str(cc.id), cc.descriptive_name))
+    except Exception as e:
+        print(f"  [WARN] Cannot list accounts for {config_path}: {e}")
+    return accounts
 
 def micros(v):
     return round(v / 1_000_000, 2) if v else 0
@@ -273,27 +290,54 @@ def parse(row, account_id=""):
     return rec
 
 def main():
-    if not ACCOUNTS:
-        print("ERROR: No accounts configured. Please add App account IDs to the ACCOUNTS list.")
-        print("       Edit fetch_app_change_history.py and fill in the account IDs.")
-        sys.exit(1)
-
-    client = make_client()
+    import os
     all_changes = []
+    total_accounts = 0
 
-    for i, cid in enumerate(ACCOUNTS):
-        print(f"[{i+1}/{len(ACCOUNTS)}] Account {cid}...", end=" ", flush=True)
-        t0 = time.time()
-        rows = run_query(client, cid, QUERY, "CHANGE")
-        parsed = [parse(r, cid) for r in rows]
-        all_changes.extend(parsed)
-        print(f"{len(parsed)} events ({time.time()-t0:.1f}s)")
+    for cfg in MCC_CONFIGS:
+        if not os.path.exists(cfg):
+            print(f"[SKIP] Config not found: {cfg}")
+            continue
+
+        print(f"\n{'='*50}")
+        print(f"MCC Config: {cfg}")
+        print(f"{'='*50}")
+
+        try:
+            accounts = discover_accounts(cfg)
+        except Exception as e:
+            print(f"  [SKIP] Failed to connect: {e}")
+            continue
+        if not accounts:
+            print("  No accounts found, skipping.")
+            continue
+
+        print(f"  Found {len(accounts)} accounts")
+        try:
+            client = make_client(cfg)
+        except Exception as e:
+            print(f"  [SKIP] Failed to create client: {e}")
+            continue
+
+        for i, (cid, name) in enumerate(accounts):
+            print(f"  [{i+1}/{len(accounts)}] {cid} ({name})...", end=" ", flush=True)
+            t0 = time.time()
+            try:
+                rows = run_query(client, cid, QUERY, "CHANGE")
+                parsed = [parse(r, cid) for r in rows]
+                all_changes.extend(parsed)
+                total_accounts += 1
+                print(f"{len(parsed)} events ({time.time()-t0:.1f}s)")
+            except Exception as e:
+                print(f"ERROR ({time.time()-t0:.1f}s): {e}")
 
     all_changes.sort(key=lambda x: x.get("dateTime", ""), reverse=True)
-    print(f"\nTotal change events: {len(all_changes)}")
+    print(f"\n{'='*50}")
+    print(f"Total: {len(all_changes)} change events from {total_accounts} accounts")
 
     js = f"// App Change History — Auto-generated via Google Ads API\n"
     js += f"// Date range: {START_DATE} ~ {END_DATE}\n"
+    js += f"// Accounts: {total_accounts}\n"
     js += f"// Generated: {time.strftime('%Y-%m-%d %H:%M')}\n\n"
     js += f"const ADW_APP_CHANGE_HISTORY = {json.dumps(all_changes, ensure_ascii=False, indent=None)};\n"
 

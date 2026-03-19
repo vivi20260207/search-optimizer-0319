@@ -2620,6 +2620,7 @@ function renderNegKWCenter() {
   });
 
   const gapAlerts = [];
+  const _gapSeen = new Set();
   Object.entries(productCamps).forEach(([product, camps]) => {
     if (camps.length < 2) return;
     const campNegSets = {};
@@ -2630,18 +2631,23 @@ function renderNegKWCenter() {
       campNegSets[c1].forEach(kw => {
         camps.forEach(c2 => {
           if (c1 !== c2 && !campNegSets[c2].has(kw)) {
-            const stData = ST_MAP[c2] || [];
-            const spending = stData.filter(st => st.term && st.term.toLowerCase().includes(kw));
-            const totalSpend = spending.reduce((s, st) => s + (st.cost || 0), 0);
-            if (totalSpend > 5) {
-              gapAlerts.push({
-                keyword: kw,
-                negatedIn: c1,
-                missingIn: c2,
-                product,
-                spend: totalSpend,
-                convs: spending.reduce((s, st) => s + (st.conversions || 0), 0)
-              });
+            const gapKey = kw + '|||' + c2;
+            if (!_gapSeen.has(gapKey)) {
+              _gapSeen.add(gapKey);
+              const stData = ST_MAP[c2] || [];
+              const spending = stData.filter(st => st.term && st.term.toLowerCase().includes(kw));
+              const totalSpend = spending.reduce((s, st) => s + (st.cost || 0), 0);
+              const negatedCamps = camps.filter(cx => campNegSets[cx] && campNegSets[cx].has(kw));
+              if (totalSpend > 5) {
+                gapAlerts.push({
+                  keyword: kw,
+                  negatedIn: negatedCamps.join(', '),
+                  missingIn: c2,
+                  product,
+                  spend: totalSpend,
+                  convs: spending.reduce((s, st) => s + (st.conversions || 0), 0)
+                });
+              }
             }
           }
         });
@@ -2785,10 +2791,11 @@ function renderNegKWCenter() {
     gapAlerts.slice(0, 30).forEach((g, i) => {
       const did = makeDiagId('gap', g.keyword, g.missingIn);
       const hasN = diagHasNotes(did);
+      const negCamps = g.negatedIn.split(', ').map(c => U.campShortName(c));
       diagHtml += `<div class="diag-item ${hasN ? 'has-notes' : ''}" style="padding:6px 0;border-bottom:1px solid #f1f5f9;" data-diag-type="gap" data-diag-idx="${i}">
-        <strong>"${g.keyword}"</strong> 在 <span class="badge badge-good" style="font-size:10px;">${U.campShortName(g.negatedIn)}</span> 已否定
-        <br><span class="clr-bad">但在 <strong>${U.campShortName(g.missingIn)}</strong> 仍花费 $${U.fmt(g.spend)}</span>
-        ${g.convs > 0 ? `<span class="clr-warn"> (${g.convs} 转化，需确认是否误杀)</span>` : '<span class="muted"> (0 转化，建议也否定)</span>'}
+        <strong>"${g.keyword}"</strong> 已在 ${negCamps.length} 个Campaign否定
+        <br><span class="clr-bad">但 <strong>${U.campShortName(g.missingIn)}</strong> 仍花费 $${U.fmt(g.spend)}</span>
+        ${g.convs > 0 ? `<span class="clr-warn"> (${g.convs} 转化，需确认)</span>` : '<span class="muted"> (0 转化，建议也否定)</span>'}
       </div>`;
     });
   }
@@ -2874,12 +2881,14 @@ function renderNegKWCenter() {
         const g = gapAlerts[idx]; if (!g) return;
         diagId = makeDiagId('gap', g.keyword, g.missingIn);
         title = `🕳️ 漏网之鱼: ${g.keyword}`;
+        const negList = g.negatedIn.split(', ').map(c => `<li>${c}</li>`).join('');
         detail = `<p><strong>否定词:</strong> "${g.keyword}"</p>
-          <p><strong>已否定于:</strong> ${g.negatedIn}</p>
+          <p><strong>已否定于（${g.negatedIn.split(', ').length} 个Campaign）:</strong></p>
+          <ul style="margin:4px 0 8px;padding-left:18px;font-size:12px;line-height:1.7;">${negList}</ul>
           <p><strong>遗漏于:</strong> <span style="color:var(--red);font-weight:600;">${g.missingIn}</span></p>
-          <p><strong>遗漏Campaign花费:</strong> <span style="color:var(--red);">$${U.fmt(g.spend)}</span></p>
+          <p><strong>遗漏Campaign花费:</strong> <span style="color:var(--red);font-size:18px;font-weight:700;">$${U.fmt(g.spend)}</span></p>
           <p><strong>遗漏Campaign转化:</strong> ${g.convs || 0}</p>
-          <p>${g.convs > 0 ? '<span style="color:var(--orange);font-weight:600;">⚠️ 有转化! 请确认是否真的应该否定，可能在此Campaign中是有效流量。</span>' : '<span style="color:var(--green);">0 转化 + 有花费 → 建议也在此Campaign中添加否定。</span>'}</p>`;
+          <p>${g.convs > 0 ? '<span style="color:var(--orange);font-weight:600;">⚠️ 有转化! 请确认是否真的应该否定，可能在此Campaign中是有效流量。</span>' : '<span style="color:var(--green);">0 转化 + 有花费 → 建议在此Campaign中也添加否定。</span>'}</p>`;
       } else if (type === 'broad') {
         const e = broadAlerts[idx]; if (!e) return;
         const d = e._diags.find(d => d.type === 'too-broad');

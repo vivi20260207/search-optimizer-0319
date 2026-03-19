@@ -778,6 +778,114 @@ td.num { font-variant-numeric: tabular-nums; }
 .tip-ok { background: #F0FFF4; color: var(--green); border: 1px solid rgba(39,174,96,0.2); }
 .tip-info { background: #F0F4FF; color: var(--accent); border: 1px solid rgba(67,97,238,0.2); }
 
+/* ─── Landing Page Data Note ─── */
+.lp-data-note {
+  background: linear-gradient(135deg, #eff6ff 0%, #fefce8 100%);
+  border: 1px solid #bfdbfe;
+  border-left: 4px solid var(--blue);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 18px;
+}
+.lp-data-note-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--blue);
+  margin-bottom: 8px;
+}
+.lp-data-note-body {
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.7;
+}
+.lp-data-note-body p { margin-bottom: 6px; }
+.lp-data-note-body p:last-child { margin-bottom: 0; }
+.lp-data-note-body code {
+  background: rgba(37,99,235,0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--blue);
+}
+
+/* ─── LCP Status Badges ─── */
+.lcp-good { color: var(--green); font-weight: 700; }
+.lcp-warn { color: var(--orange); font-weight: 700; }
+.lcp-bad { color: var(--red); font-weight: 700; }
+.gclid-ok { color: var(--green); font-weight: 600; }
+.gclid-lost { color: var(--red); font-weight: 600; background: var(--red-bg); padding: 2px 6px; border-radius: 4px; }
+.risk-high { background: var(--red-bg); color: var(--red); padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+.risk-medium { background: var(--orange-bg); color: var(--orange); padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+.risk-low { background: var(--green-bg); color: var(--green); padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+
+/* ─── Ad Copy Module ─── */
+.adcopy-filters {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding: 16px 20px;
+  background: var(--card);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+.adcopy-filter-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.adcopy-filter-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  white-space: nowrap;
+}
+.adcopy-select {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.adcopy-select:hover { border-color: var(--accent); }
+.adcopy-select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
+
+.adcopy-table td:first-child {
+  font-size: 13px;
+  line-height: 1.5;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.adcopy-table .asset-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-light);
+  margin-top: 4px;
+  overflow: hidden;
+}
+.adcopy-table .asset-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width .3s;
+}
+.adcopy-perf-best { background: var(--green-bg); color: var(--green); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+.adcopy-perf-good { background: var(--blue-bg); color: var(--blue); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+.adcopy-perf-low { background: var(--red-bg); color: var(--red); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+.adcopy-camp-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--accent-light);
+  color: var(--accent);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 /* ─── Responsive ─── */
 @media (max-width: 1200px) {
   .kpi-grid-5, .kpi-grid-6 { grid-template-columns: repeat(3, 1fr); }

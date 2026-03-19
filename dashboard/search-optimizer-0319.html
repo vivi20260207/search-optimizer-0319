@@ -38,11 +38,26 @@
       <li class="nav-item" data-view="kw-cluster">
         <span class="nav-icon">🧩</span> 关键词聚类
       </li>
+      <li class="nav-item" data-view="ad-copy">
+        <span class="nav-icon">📝</span> 广告文案分析
+      </li>
       <li class="nav-item" data-view="quality-score">
         <span class="nav-icon">⭐</span> 质量得分
       </li>
       <li class="nav-item" data-view="devices">
         <span class="nav-icon">📱</span> 设备分析
+      </li>
+
+      <li class="nav-group-label">例行检查</li>
+      <li class="nav-item" data-view="landing-page">
+        <span class="nav-icon">🌐</span> 落地页专区
+      </li>
+      <li class="nav-item" data-view="demographics">
+        <span class="nav-icon">👥</span> 受众画像
+      </li>
+      <li class="nav-item" data-view="ad-policy">
+        <span class="nav-icon">⚠️</span> 违规提醒
+        <span class="nav-badge" id="nav-policy-count">0</span>
       </li>
     </ul>
     <div class="sidebar-footer">
@@ -283,6 +298,66 @@
       <div id="cluster-list"></div>
     </section>
 
+    <!-- ═══ VIEW: 广告文案分析 ═══ -->
+    <section class="view-section" id="view-ad-copy">
+      <div class="page-header">
+        <div>
+          <h2>广告标题与文案 (Ad Copy)</h2>
+          <span class="page-header-meta">跨 Campaign 汇总分析 | 寻找高转化文案公式</span>
+        </div>
+        <span class="badge badge-good">REAL DATA</span>
+      </div>
+
+      <div class="adcopy-filters">
+        <div class="adcopy-filter-item">
+          <span class="adcopy-filter-label">🌍 国家盘</span>
+          <select id="adcopy-geo-select" class="adcopy-select">
+            <option value="all">全部</option>
+            <option value="in">🇮🇳 印度 (IN)</option>
+            <option value="us_uk">🇺🇸🇬🇧 欧美 (US/UK)</option>
+            <option value="me">🇦🇪 中东 (ME/AR)</option>
+          </select>
+        </div>
+        <div class="adcopy-filter-item">
+          <span class="adcopy-filter-label">📄 素材类型</span>
+          <select id="adcopy-type-select" class="adcopy-select">
+            <option value="all">全部</option>
+            <option value="标题">标题 (Headline)</option>
+            <option value="描述">描述 (Description)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="kpi-row" id="adcopy-kpis"></div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>📋 全局文案素材库</h3>
+          <span class="muted">相同文案跨 Campaign 合并 | 按转化数降序</span>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table adcopy-table">
+            <thead>
+              <tr>
+                <th style="min-width:260px">文案内容</th>
+                <th>类型</th>
+                <th>评级</th>
+                <th class="num">转化 ▼</th>
+                <th class="num">花费</th>
+                <th class="num">CPA</th>
+                <th class="num">ROAS</th>
+                <th class="num">曝光</th>
+                <th class="num">点击</th>
+                <th class="num">CTR</th>
+                <th class="num">覆盖</th>
+              </tr>
+            </thead>
+            <tbody id="adcopy-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- ═══ VIEW: 质量得分 ═══ -->
     <section class="view-section" id="view-quality-score">
       <div class="page-header">
@@ -347,6 +422,118 @@
       </div>
     </section>
 
+    <!-- ═══ VIEW: 落地页专区 ═══ -->
+    <section class="view-section" id="view-landing-page">
+      <div class="page-header">
+        <div>
+          <h2>落地页健康检查</h2>
+          <span class="page-header-meta">Gclid 参数跟踪 & LCP 加载速度 — 以落地页 URL 为维度</span>
+        </div>
+        <span class="data-tag data-tag-mock">MOCK DATA</span>
+      </div>
+
+      <div class="lp-data-note">
+        <div class="lp-data-note-title">数据接入说明</div>
+        <div class="lp-data-note-body">
+          <p><strong>Gclid 检测：</strong>使用 Python 拨测脚本（requests/playwright），定时请求各 Final URL 并追加 ?gclid=test_xxx 参数，检查经 301/302 跳转后 gclid 是否保留在最终 URL 中。</p>
+          <p><strong>LCP 检测：</strong>接入 Google PageSpeed Insights API（<code>https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=URL&strategy=mobile</code>），提取 <code>lighthouseResult.audits['largest-contentful-paint'].numericValue</code>（毫秒），每日定时跑一次。</p>
+          <p>当前为 Mock 数据演示。后续替换为真实拨测结果后，将 <code>data-tag-mock</code> 改为 <code>data-tag-real</code>。</p>
+        </div>
+      </div>
+
+      <div id="lp-kpis" class="kpi-grid kpi-grid-4"></div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>落地页健康明细</h3>
+          <span class="muted">LCP > 3s 标红 | Gclid 丢失标红</span>
+        </div>
+        <div class="card-body-flush table-wrap">
+          <table>
+            <thead><tr>
+              <th style="min-width:220px">落地页 URL</th>
+              <th>关联产品</th>
+              <th>关联 Campaign</th>
+              <th class="num">LCP (ms)</th>
+              <th>LCP 达标</th>
+              <th>Gclid 跟踪</th>
+              <th>跳转链路</th>
+              <th>最终 URL</th>
+              <th>最近检测</th>
+              <th>风险等级</th>
+            </tr></thead>
+            <tbody id="lp-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ VIEW: 受众画像 ═══ -->
+    <section class="view-section" id="view-demographics">
+      <div class="page-header">
+        <div>
+          <h2>受众画像分析</h2>
+          <span class="page-header-meta">性别 & 年龄维度消耗 — 检查是否已排除女性等非目标受众</span>
+        </div>
+        <span class="data-tag data-tag-real">REAL DATA</span>
+      </div>
+      <div id="demo-kpis" class="kpi-grid kpi-grid-4"></div>
+      <div class="card">
+        <div class="card-header"><h3>性别消耗明细</h3><span class="muted">重点关注 Female 是否有花费</span></div>
+        <div class="card-body-flush table-wrap">
+          <table>
+            <thead><tr>
+              <th>Campaign</th><th>性别</th>
+              <th class="num">花费</th><th class="num">点击</th><th class="num">展示</th>
+              <th class="num">转化</th><th class="num">转化价值</th>
+              <th class="num">占 Campaign 花费%</th>
+              <th>风险</th>
+            </tr></thead>
+            <tbody id="gender-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><h3>年龄段消耗明细</h3><span class="muted">关注低付费意愿年龄段的消耗</span></div>
+        <div class="card-body-flush table-wrap">
+          <table>
+            <thead><tr>
+              <th>Campaign</th><th>年龄段</th>
+              <th class="num">花费</th><th class="num">点击</th><th class="num">展示</th>
+              <th class="num">转化</th><th class="num">转化价值</th>
+              <th class="num">占 Campaign 花费%</th>
+              <th>风险</th>
+            </tr></thead>
+            <tbody id="age-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ VIEW: 违规提醒 ═══ -->
+    <section class="view-section" id="view-ad-policy">
+      <div class="page-header">
+        <div>
+          <h2>广告违规 & 拒登提醒</h2>
+          <span class="page-header-meta">实时监控广告审核状态，拒登需立即处理</span>
+        </div>
+        <span class="data-tag data-tag-real">REAL DATA</span>
+      </div>
+      <div id="policy-kpis" class="kpi-grid kpi-grid-4"></div>
+      <div class="card">
+        <div class="card-header"><h3>拒登 / 受限广告列表</h3><span class="muted">仅展示非正常审核状态的广告</span></div>
+        <div class="card-body-flush table-wrap">
+          <table>
+            <thead><tr>
+              <th>Campaign</th><th>广告组</th><th>Ad ID</th><th>广告类型</th>
+              <th>审核状态</th><th>违规主题</th><th>操作建议</th>
+            </tr></thead>
+            <tbody id="policy-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
   </main>
 </div>
 
@@ -354,6 +541,7 @@
 <script src="js/adw_data.js"></script>
 <script src="js/adw_data_daily.js"></script>
 <script src="js/adw_data_st.js"></script>
+<script src="js/adw_data_assets.js"></script>
 <script src="js/utils-0319.js"></script>
 <script src="js/engine-0319.js"></script>
 <script src="js/search-optimizer-0319.js"></script>

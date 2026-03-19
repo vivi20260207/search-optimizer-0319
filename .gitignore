@@ -1,2 +1,5 @@
 .DS_Store
 .vercel
+fetch_adw_data.py
+google-ads.yaml
+test_adw_connection.py

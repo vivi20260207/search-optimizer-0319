@@ -201,6 +201,8 @@ const Engine = {
 
       // Search Term 级异常：高花费零转化搜索词
       const sts = stMap[c.name] || [];
+      const campAvgCPA = c.newPayUsers > 0 ? c.spend / c.newPayUsers : null;
+
       sts.forEach(st => {
         if ((st.cost || 0) > 50 && (!st.purchaseNew || st.purchaseNew === 0) && (st.clicks || 0) > 10) {
           anomalies.push({
@@ -210,6 +212,23 @@ const Engine = {
             type: 'waste_search_term',
             title: `浪费搜索词：${st.term}`,
             desc: `花费 ${U.fmt(st.cost)} HKD，${st.clicks} 次点击，0 付费转化 → 建议否定`,
+            campaign: c,
+            searchTerm: st,
+            rootCause: null
+          });
+        }
+
+        // "好词淘金"：搜索词有转化、CPA 优于 Campaign 均值、且尚未被添加为关键词
+        const stCPA = (st.purchaseNew > 0 && st.cost > 0) ? st.cost / st.purchaseNew : null;
+        const isNotAdded = !st.addedExcluded || st.addedExcluded !== '已添加';
+        if (st.purchaseNew >= 2 && isNotAdded && stCPA !== null && (!campAvgCPA || stCPA <= campAvgCPA * 1.2)) {
+          anomalies.push({
+            severity: 'positive',
+            level: 'Search Term',
+            target: st.term,
+            type: 'gold_search_term',
+            title: `好词淘金：${st.term}`,
+            desc: `转化 ${st.purchaseNew} 次，CPA ${U.fmt(stCPA)} HKD，表现优于大盘 → 建议添加为精确匹配关键词`,
             campaign: c,
             searchTerm: st,
             rootCause: null
@@ -328,6 +347,13 @@ const Engine = {
     } else if (anomaly.type === 'scale_opportunity') {
       suggestions.push('提价 15-30% 测试扩量');
       suggestions.push('单提为 Exact 匹配并独立给高价');
+    } else if (anomaly.type === 'gold_search_term') {
+      suggestions.push(`将 "${anomaly.searchTerm.term}" 添加为精确匹配关键词，锁住优质流量`);
+      suggestions.push('在原广泛匹配关键词中添加该词为否定词，避免两个匹配类型互相抢量');
+      suggestions.push('新词添加后观察 3-5 天，确认独立 CPA 稳定后再提价扩量');
+    } else if (anomaly.type === 'waste_search_term') {
+      suggestions.push(`将 "${anomaly.searchTerm.term}" 添加到否定关键词列表`);
+      suggestions.push('分析该词的词根，如果和产品完全无关，考虑否定词根（Phrase Negative）');
     }
 
     steps.push({

@@ -1735,6 +1735,410 @@ function toggleCluster(idx) {
 }
 
 // ═══════════════════════════════════════
+// 落地页健康检查（Mock Data — 待接入真实拨测数据）
+// ═══════════════════════════════════════
+
+/*
+ * ── 数据接入指引 ──
+ *
+ * 1) Gclid 检测脚本 (Python):
+ *    import requests
+ *    def check_gclid(url):
+ *        test_url = url + ('&' if '?' in url else '?') + 'gclid=test_abc123'
+ *        resp = requests.get(test_url, allow_redirects=True, timeout=10)
+ *        final_url = resp.url
+ *        return {
+ *            'gclid_preserved': 'gclid=test_abc123' in final_url,
+ *            'redirect_chain': [r.url for r in resp.history] + [final_url],
+ *            'final_url': final_url,
+ *            'status_code': resp.status_code
+ *        }
+ *
+ * 2) LCP 检测脚本 (Python, Google PageSpeed Insights API):
+ *    import requests
+ *    PSI_API = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed'
+ *    def check_lcp(url, api_key='YOUR_KEY'):
+ *        resp = requests.get(PSI_API, params={
+ *            'url': url, 'strategy': 'mobile', 'key': api_key,
+ *            'category': 'PERFORMANCE'
+ *        })
+ *        data = resp.json()
+ *        lcp_ms = data['lighthouseResult']['audits']['largest-contentful-paint']['numericValue']
+ *        return { 'lcp_ms': round(lcp_ms), 'score': data['lighthouseResult']['categories']['performance']['score'] }
+ *
+ * 3) 输出格式:
+ *    将结果写入 JS 文件，格式同下方 MOCK_LANDING_PAGES 常量。
+ *    替换后将 HTML 中 data-tag-mock 改为 data-tag-real。
+ */
+
+const MOCK_LANDING_PAGES = [
+  {
+    url: 'https://www.fachatapp.com/',
+    product: 'Ft',
+    campaigns: ['Ft-web-US-2.5-Display-12.26-homepage', 'Ft-web-UK-2.5-Display-1.3-homepage', 'ft-web-IN-2.5-广泛-1.17-功能词-首页-TCPA'],
+    lcpMs: 2340,
+    gclidPreserved: true,
+    redirectChain: ['https://www.fachatapp.com/ → (无跳转)'],
+    finalUrl: 'https://www.fachatapp.com/',
+    lastChecked: '2026-03-19 09:00'
+  },
+  {
+    url: 'https://parau.vip/',
+    product: 'Pu',
+    campaigns: ['pu-web-IN-2.5-竞品词-6.14重开', 'pu-web-IN-2.5-品牌词-6.16', 'Pu-web-IN-2.5-emeraldchat-9.2重开-emeraldchat页-TCPA', 'Pu-web-美国-2.5-6.14重开-功能词-TCPA'],
+    lcpMs: 4120,
+    gclidPreserved: false,
+    redirectChain: ['https://parau.vip/ → 302 → https://parau.vip/home → (gclid 丢失)'],
+    finalUrl: 'https://parau.vip/home',
+    lastChecked: '2026-03-19 09:00'
+  },
+  {
+    url: 'https://www.pinkpinkchat.com/',
+    product: 'Ppt',
+    campaigns: ['Ppt-web-UK-2.5-1.18-homepage', 'Ppt-web-US-2.5-1.17-homepage', 'Ppt-web-US-2.5-竞品词-1.28-homepage', 'Ppt-web-UK-2.5-竞品词-2.2-homepage'],
+    lcpMs: 1890,
+    gclidPreserved: true,
+    redirectChain: ['https://www.pinkpinkchat.com/ → (无跳转)'],
+    finalUrl: 'https://www.pinkpinkchat.com/',
+    lastChecked: '2026-03-19 09:00'
+  },
+  {
+    url: 'https://parau.vip/emeraldchat',
+    product: 'Pu',
+    campaigns: ['Pu-web-IN-2.5-emeraldchat-9.2重开-emeraldchat页-TCPA'],
+    lcpMs: 5230,
+    gclidPreserved: false,
+    redirectChain: ['https://parau.vip/emeraldchat → 301 → https://parau.vip/chat?ref=emerald → (gclid 截断)'],
+    finalUrl: 'https://parau.vip/chat?ref=emerald',
+    lastChecked: '2026-03-19 09:00'
+  }
+];
+
+function renderLandingPageZone() {
+  const pages = MOCK_LANDING_PAGES;
+  const lcpBad = pages.filter(p => p.lcpMs > 3000).length;
+  const gclidLost = pages.filter(p => !p.gclidPreserved).length;
+  const totalCamps = pages.reduce((s, p) => s + p.campaigns.length, 0);
+
+  let riskLevel = 'low';
+  if (lcpBad > 0 || gclidLost > 0) riskLevel = 'medium';
+  if (lcpBad > 1 && gclidLost > 0) riskLevel = 'high';
+
+  U.html('lp-kpis', `
+    <div class="kpi-card"><div class="kpi-label">在投落地页</div><div class="kpi-value">${pages.length}</div><div class="kpi-sub">关联 ${totalCamps} 个 Campaign</div></div>
+    <div class="kpi-card"><div class="kpi-label">LCP > 3s (不达标)</div><div class="kpi-value clr-${lcpBad > 0 ? 'bad' : 'good'}">${lcpBad}</div><div class="kpi-sub">${lcpBad > 0 ? '流失率飙升风险' : '全部达标'}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Gclid 丢失</div><div class="kpi-value clr-${gclidLost > 0 ? 'bad' : 'good'}">${gclidLost}</div><div class="kpi-sub">${gclidLost > 0 ? '归因断裂风险' : '参数完整'}</div></div>
+    <div class="kpi-card"><div class="kpi-label">综合风险</div><div class="kpi-value"><span class="risk-${riskLevel}">${riskLevel === 'high' ? '高危' : riskLevel === 'medium' ? '中危' : '健康'}</span></div><div class="kpi-sub">${riskLevel !== 'low' ? '需立即处理' : '无异常'}</div></div>
+  `);
+
+  let html = '';
+  pages.forEach(p => {
+    const lcpCls = p.lcpMs <= 2500 ? 'lcp-good' : p.lcpMs <= 3000 ? 'lcp-warn' : 'lcp-bad';
+    const lcpStatus = p.lcpMs <= 2500 ? '优秀' : p.lcpMs <= 3000 ? '及格' : '不达标';
+    const gclidCls = p.gclidPreserved ? 'gclid-ok' : 'gclid-lost';
+    const gclidText = p.gclidPreserved ? '正常' : '丢失';
+    const campList = p.campaigns.map(c => U.campShortName(c)).join(', ');
+
+    let risk = 'low';
+    const risks = [];
+    if (p.lcpMs > 3000) { risk = 'high'; risks.push('LCP超标'); }
+    if (!p.gclidPreserved) { risk = 'high'; risks.push('Gclid丢失'); }
+    if (p.lcpMs > 2500 && p.lcpMs <= 3000) { if (risk === 'low') risk = 'medium'; risks.push('LCP临界'); }
+
+    html += `<tr>
+      <td class="bold" style="word-break:break-all;white-space:normal;max-width:220px;"><a href="${p.url}" target="_blank" style="color:var(--accent);">${p.url}</a></td>
+      <td>${U.badge(p.product, p.product === 'Ft' ? 'info' : p.product === 'Pu' ? 'warn' : 'accent')}</td>
+      <td class="muted" style="max-width:200px;white-space:normal;">${campList}</td>
+      <td class="num ${lcpCls}">${p.lcpMs.toLocaleString()}</td>
+      <td><span class="${lcpCls}">${lcpStatus}</span></td>
+      <td><span class="${gclidCls}">${gclidText}</span></td>
+      <td class="muted" style="max-width:200px;white-space:normal;font-size:11px;">${p.redirectChain.join('<br>')}</td>
+      <td class="muted" style="word-break:break-all;white-space:normal;max-width:180px;">${p.finalUrl}</td>
+      <td class="muted">${p.lastChecked}</td>
+      <td><span class="risk-${risk}">${risks.length > 0 ? risks.join(' + ') : '健康'}</span></td>
+    </tr>`;
+  });
+
+  U.html('lp-tbody', html);
+}
+
+// ═══════════════════════════════════════
+// 受众画像分析 (Gender + Age)
+// ═══════════════════════════════════════
+const GENDER_MAP = {};
+const AGE_MAP = {};
+
+(function autoRegisterDemographics() {
+  const globals = Object.keys(window);
+
+  globals.filter(k => k.startsWith('ADW_GENDER_') && Array.isArray(window[k]) && window[k].length > 0)
+    .forEach(k => {
+      const camp = window[k][0].campaign;
+      if (camp && !GENDER_MAP[camp]) GENDER_MAP[camp] = window[k];
+    });
+
+  globals.filter(k => k.startsWith('ADW_AGE_') && Array.isArray(window[k]) && window[k].length > 0)
+    .forEach(k => {
+      const camp = window[k][0].campaign;
+      if (camp && !AGE_MAP[camp]) AGE_MAP[camp] = window[k];
+    });
+
+  console.log('[AutoReg] GENDER:', Object.keys(GENDER_MAP).length, 'AGE:', Object.keys(AGE_MAP).length);
+})();
+
+function renderDemographics() {
+  const allGender = [];
+  Object.entries(GENDER_MAP).forEach(([camp, rows]) => {
+    const campTotal = rows.reduce((s, r) => s + (r.cost || 0), 0);
+    rows.forEach(r => allGender.push({ ...r, campTotal }));
+  });
+  const allAge = [];
+  Object.entries(AGE_MAP).forEach(([camp, rows]) => {
+    const campTotal = rows.reduce((s, r) => s + (r.cost || 0), 0);
+    rows.forEach(r => allAge.push({ ...r, campTotal }));
+  });
+
+  const femaleCost = allGender.filter(r => r.gender === '女性').reduce((s, r) => s + (r.cost || 0), 0);
+  const totalGenderCost = allGender.reduce((s, r) => s + (r.cost || 0), 0);
+  const campsWithFemale = [...new Set(allGender.filter(r => r.gender === '女性' && r.cost > 0).map(r => r.campaign))];
+
+  U.html('demo-kpis', `
+    <div class="kpi-card"><div class="kpi-label">有受众数据 Campaign</div><div class="kpi-value">${Object.keys(GENDER_MAP).length}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Female 总花费</div><div class="kpi-value clr-${femaleCost > 0 ? 'bad' : 'good'}">${U.fmtK(Math.round(femaleCost))}</div><div class="kpi-sub">${femaleCost > 0 ? campsWithFemale.length + ' 个 Campaign 有泄漏' : '已全部排除'}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Female 占比</div><div class="kpi-value clr-${U.pct(femaleCost, totalGenderCost) > 5 ? 'bad' : 'good'}">${U.fmtPct(U.pct(femaleCost, totalGenderCost), 1)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">年龄段数据</div><div class="kpi-value">${Object.keys(AGE_MAP).length}</div><div class="kpi-sub">Campaign 有数据</div></div>
+  `);
+
+  let gHtml = '';
+  allGender.sort((a, b) => {
+    if (a.campaign !== b.campaign) return a.campaign.localeCompare(b.campaign);
+    return (b.cost || 0) - (a.cost || 0);
+  }).forEach(r => {
+    const pct = r.campTotal > 0 ? U.pct(r.cost, r.campTotal) : 0;
+    const isFemale = r.gender === '女性';
+    const risk = isFemale && r.cost > 0;
+    gHtml += `<tr${risk ? ' style="background:var(--red-bg)"' : ''}>
+      <td class="bold">${U.campShortName(r.campaign)}</td>
+      <td>${r.gender}${isFemale ? ' ⚠️' : ''}</td>
+      <td class="num ${risk ? 'clr-bad bold' : ''}">${U.fmtK(Math.round(r.cost))}</td>
+      <td class="num">${U.fmtK(r.clicks)}</td>
+      <td class="num">${U.fmtK(r.impressions)}</td>
+      <td class="num">${U.fmt(r.conversions, 0)}</td>
+      <td class="num">${U.fmtK(Math.round(r.revenue))}</td>
+      <td class="num">${U.fmtPct(pct, 1)}</td>
+      <td>${risk ? '<span class="badge badge-bad">未排除女性</span>' : isFemale && r.cost === 0 ? '<span class="badge badge-good">已排除</span>' : ''}</td>
+    </tr>`;
+  });
+  U.html('gender-tbody', gHtml || '<tr><td colspan="9" class="muted" style="text-align:center;padding:20px;">暂无性别数据。运行 fetch_adw_data.py 拉取 gender_view 后可用。</td></tr>');
+
+  let aHtml = '';
+  allAge.sort((a, b) => {
+    if (a.campaign !== b.campaign) return a.campaign.localeCompare(b.campaign);
+    return (b.cost || 0) - (a.cost || 0);
+  }).forEach(r => {
+    const pct = r.campTotal > 0 ? U.pct(r.cost, r.campTotal) : 0;
+    const isLowValue = (r.ageRange === '65+' || r.ageRange === '未确定') && r.cost > 50;
+    aHtml += `<tr${isLowValue ? ' style="background:var(--orange-bg)"' : ''}>
+      <td class="bold">${U.campShortName(r.campaign)}</td>
+      <td>${r.ageRange}</td>
+      <td class="num">${U.fmtK(Math.round(r.cost))}</td>
+      <td class="num">${U.fmtK(r.clicks)}</td>
+      <td class="num">${U.fmtK(r.impressions)}</td>
+      <td class="num">${U.fmt(r.conversions, 0)}</td>
+      <td class="num">${U.fmtK(Math.round(r.revenue))}</td>
+      <td class="num">${U.fmtPct(pct, 1)}</td>
+      <td>${isLowValue ? '<span class="badge badge-warn">低价值年龄段</span>' : ''}</td>
+    </tr>`;
+  });
+  U.html('age-tbody', aHtml || '<tr><td colspan="9" class="muted" style="text-align:center;padding:20px;">暂无年龄数据。运行 fetch_adw_data.py 拉取 age_range_view 后可用。</td></tr>');
+}
+
+// ═══════════════════════════════════════
+// 违规提醒 (Ad Policy Status)
+// ═══════════════════════════════════════
+function renderAdPolicy() {
+  const disapproved = (typeof ADW_DISAPPROVED_ADS !== 'undefined') ? ADW_DISAPPROVED_ADS : [];
+  const nonNormal = (typeof ADW_POLICY_NON_NORMAL !== 'undefined') ? ADW_POLICY_NON_NORMAL : [];
+  const totalScanned = (typeof ADW_POLICY_TOTAL_COUNT !== 'undefined') ? ADW_POLICY_TOTAL_COUNT : 0;
+  const allPolicy = nonNormal.length > 0 ? nonNormal : disapproved;
+
+  const disapprovedCount = allPolicy.filter(a => a.approvalStatus === '已拒登').length;
+  const limitedCount = allPolicy.filter(a => a.approvalStatus === '受限批准').length;
+  const approvedCount = totalScanned - allPolicy.length;
+  const affectedCamps = [...new Set(allPolicy.map(a => a.campaign))].length;
+
+  const navBadge = U.el('nav-policy-count');
+  if (navBadge) navBadge.textContent = disapprovedCount + limitedCount;
+
+  U.html('policy-kpis', `
+    <div class="kpi-card"><div class="kpi-label">已拒登广告</div><div class="kpi-value clr-${disapprovedCount > 0 ? 'bad' : 'good'}">${disapprovedCount}</div><div class="kpi-sub">${disapprovedCount > 0 ? '需立即处理' : '无拒登'}</div></div>
+    <div class="kpi-card"><div class="kpi-label">受限批准</div><div class="kpi-value clr-${limitedCount > 0 ? 'warn' : 'good'}">${limitedCount}</div><div class="kpi-sub">${limitedCount > 0 ? '部分受众不展示' : '无受限'}</div></div>
+    <div class="kpi-card"><div class="kpi-label">已审核通过</div><div class="kpi-value clr-good">${approvedCount}</div><div class="kpi-sub">共扫描 ${totalScanned} 条广告</div></div>
+    <div class="kpi-card"><div class="kpi-label">涉及异常 Campaign</div><div class="kpi-value">${affectedCamps}</div><div class="kpi-sub">${affectedCamps === 0 ? '全部正常' : '需关注'}</div></div>
+  `);
+
+  let html = '';
+  if (allPolicy.length > 0) {
+    allPolicy.forEach(ad => {
+      const isDisapproved = ad.approvalStatus === '已拒登';
+      const isLimited = ad.approvalStatus === '受限批准';
+      const statusCls = isDisapproved ? 'badge-bad' : isLimited ? 'badge-warn' : 'badge-info';
+      const topics = (ad.policyTopics || []).map(t => `${t.topic} (${t.type})`).join(', ') || '--';
+
+      let suggestion = '';
+      if (isDisapproved) suggestion = '<span class="badge badge-bad">立即修改广告素材并重新提交审核</span>';
+      else if (isLimited) suggestion = '<span class="badge badge-warn">检查受限原因，评估对量级的影响</span>';
+
+      html += `<tr${isDisapproved ? ' style="background:var(--red-bg)"' : ''}>
+        <td class="bold">${U.campShortName(ad.campaign)}</td>
+        <td class="muted">${ad.adGroup || '--'}</td>
+        <td class="muted">${ad.adId}</td>
+        <td>${ad.adType || '--'}</td>
+        <td><span class="badge ${statusCls}">${ad.approvalStatus}</span></td>
+        <td class="muted" style="white-space:normal;max-width:250px;">${topics}</td>
+        <td>${suggestion}</td>
+      </tr>`;
+    });
+  } else if (totalScanned > 0) {
+    html = `<tr><td colspan="7" style="text-align:center;padding:30px;">
+      <div style="font-size:24px;margin-bottom:8px;">✅</div>
+      <div style="font-weight:600;margin-bottom:4px;">全部广告审核正常</div>
+      <div class="muted">共扫描 ${totalScanned} 条广告，无拒登或受限情况。</div>
+    </td></tr>`;
+  } else {
+    html = `<tr><td colspan="7" style="text-align:center;padding:30px;">
+      <div class="muted">暂无 Policy 数据。请运行 <code>python3 fetch_adw_data.py</code> 拉取。</div>
+    </td></tr>`;
+  }
+
+  U.html('policy-tbody', html);
+}
+
+// ═══════════════════════════════════════
+// 广告文案分析 (Ad Copy)
+// ═══════════════════════════════════════
+function initAdCopyModule() {
+  if (typeof ADW_ALL_ASSETS === 'undefined') return;
+
+  U.el('adcopy-geo-select').addEventListener('change', renderAdCopy);
+  U.el('adcopy-type-select').addEventListener('change', renderAdCopy);
+
+  renderAdCopy();
+}
+
+function renderAdCopy() {
+  if (typeof ADW_ALL_ASSETS === 'undefined') return;
+
+  const geo  = U.el('adcopy-geo-select').value;
+  const type = U.el('adcopy-type-select').value;
+
+  let filtered = ADW_ALL_ASSETS.filter(a => {
+    if (geo === 'in'    && !a.campaign.toLowerCase().includes('-in-')) return false;
+    if (geo === 'us_uk' && !a.campaign.toLowerCase().includes('-us-') && !a.campaign.toLowerCase().includes('-uk-')) return false;
+    if (geo === 'me'    && !a.campaign.toLowerCase().includes('ar+uae')) return false;
+    if (type !== 'all'  && a.type !== type) return false;
+    return true;
+  });
+
+  const aggMap = {};
+  filtered.forEach(a => {
+    const key = a.text + '|||' + a.type;
+    if (!aggMap[key]) {
+      aggMap[key] = {
+        text: a.text, type: a.type,
+        impressions: 0, clicks: 0, cost: 0, conversions: 0, revenue: 0,
+        camps: new Set(), perfLabels: new Set()
+      };
+    }
+    const g = aggMap[key];
+    g.impressions += a.impressions;
+    g.clicks      += a.clicks;
+    g.cost        += a.cost;
+    g.conversions += a.conversions;
+    g.revenue     += a.revenue;
+    g.camps.add(a.campaign);
+    if (a.performance && a.performance !== 'NOT_APPLICABLE' && a.performance !== 'PENDING') {
+      g.perfLabels.add(a.performance);
+    }
+  });
+
+  const results = Object.values(aggMap).sort((a, b) => b.conversions - a.conversions || b.cost - a.cost);
+  const maxConv = results.length ? results[0].conversions : 1;
+
+  const totalConv = results.reduce((s, r) => s + r.conversions, 0);
+  const totalCost = results.reduce((s, r) => s + r.cost, 0);
+  const totalRev  = results.reduce((s, r) => s + r.revenue, 0);
+  const avgCpa    = totalConv > 0 ? totalCost / totalConv : 0;
+  const avgRoas   = totalCost > 0 ? totalRev / totalCost : 0;
+  const headlines = results.filter(r => r.type === '标题').length;
+  const descs     = results.filter(r => r.type === '描述').length;
+
+  U.html('adcopy-kpis', `
+    <div class="kpi-card">
+      <div class="kpi-label">独立文案数</div>
+      <div class="kpi-value">${results.length}</div>
+      <div class="kpi-sub">标题 ${headlines} / 描述 ${descs}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">总转化</div>
+      <div class="kpi-value clr-good">${U.fmtK(Math.round(totalConv))}</div>
+      <div class="kpi-sub">筛选范围内</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">总花费</div>
+      <div class="kpi-value">${U.fmtK(Math.round(totalCost))}</div>
+      <div class="kpi-sub">HKD</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">平均 CPA</div>
+      <div class="kpi-value ${avgCpa > 0 ? U.colorClassInverse(avgCpa, 50, 100) : ''}">${avgCpa > 0 ? U.fmt(avgCpa) : '--'}</div>
+      <div class="kpi-sub">HKD</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">整体 ROAS</div>
+      <div class="kpi-value ${avgRoas > 0 ? U.colorClass(avgRoas, 1.5, 0.8) : ''}">${avgRoas > 0 ? U.fmt(avgRoas) + 'x' : '--'}</div>
+      <div class="kpi-sub">Revenue / Cost</div>
+    </div>
+  `);
+
+  let html = '';
+  results.forEach((r, idx) => {
+    const ctr  = r.impressions > 0 ? (r.clicks / r.impressions * 100) : 0;
+    const cpa  = r.conversions > 0 ? r.cost / r.conversions : 0;
+    const roas = r.cost > 0 ? r.revenue / r.cost : 0;
+    const barW = maxConv > 0 ? Math.max(2, r.conversions / maxConv * 100) : 0;
+
+    let perfHtml;
+    if (r.perfLabels.has('BEST'))      perfHtml = '<span class="adcopy-perf-best">BEST</span>';
+    else if (r.perfLabels.has('GOOD')) perfHtml = '<span class="adcopy-perf-good">GOOD</span>';
+    else if (r.perfLabels.has('LOW'))  perfHtml = '<span class="adcopy-perf-low">LOW</span>';
+    else                                perfHtml = '<span class="muted">--</span>';
+
+    const typeBg = r.type === '标题' ? 'background:#f0f4ff;color:#4f46e5' : 'background:#fdf4ff;color:#9333ea';
+
+    html += `<tr>
+      <td style="max-width:320px;white-space:normal;line-height:1.6">
+        <span style="font-weight:600;color:var(--text)">${r.text}</span>
+        <div class="asset-bar"><div class="asset-bar-fill" style="width:${barW}%"></div></div>
+      </td>
+      <td><span style="padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;${typeBg}">${r.type}</span></td>
+      <td>${perfHtml}</td>
+      <td class="num" style="font-weight:700;${r.conversions > 0 ? 'color:var(--green)' : ''}">${U.fmt(r.conversions, 1)}</td>
+      <td class="num">${U.fmtK(Math.round(r.cost))}</td>
+      <td class="num ${cpa > 0 ? U.colorClassInverse(cpa, 50, 100) : ''}">${cpa > 0 ? U.fmt(cpa) : '--'}</td>
+      <td class="num ${roas > 0 ? U.colorClass(roas, 1.5, 0.8) : ''}">${roas > 0 ? U.fmt(roas) + 'x' : '--'}</td>
+      <td class="num">${U.fmtK(r.impressions)}</td>
+      <td class="num">${U.fmtK(r.clicks)}</td>
+      <td class="num">${U.fmtPct(ctr)}</td>
+      <td class="num"><span class="adcopy-camp-count">${r.camps.size}</span></td>
+    </tr>`;
+  });
+
+  if (!html) html = '<tr><td colspan="11" class="muted" style="text-align:center;padding:30px">暂无符合条件的文案数据</td></tr>';
+  U.html('adcopy-tbody', html);
+}
+
+// ═══════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════
 renderTrustGate();
@@ -1742,6 +2146,10 @@ renderCampaignOverview();
 renderDrillDown();
 renderRootCause();
 initSearchTermsModule();
+initAdCopyModule();
 renderClusterView();
 renderQualityScore();
 renderDevices();
+renderLandingPageZone();
+renderDemographics();
+renderAdPolicy();

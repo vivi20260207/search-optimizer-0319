@@ -791,29 +791,102 @@ function renderRootCause() {
   });
 }
 
+function openRCADrawer(anomaly, anomalyId, rcaSteps) {
+  const overlay = U.el('drawer-overlay');
+  const drawer = U.el('kw-drawer');
+  const sevLabel = { critical: '🔴 紧急', warning: '🟡 警告', info: '💡 建议', positive: '🟢 亮点' };
+  U.el('drawer-title').textContent = anomaly.title;
+  U.el('drawer-subtitle').innerHTML = `${sevLabel[anomaly.severity] || ''} · ${anomaly.level} · ${anomaly.type.replace(/_/g, ' ')}`;
+
+  function renderContent() {
+    const notes = getRCANotes(anomalyId);
+    let html = '';
+
+    // Description
+    html += `<div class="drawer-section"><div class="drawer-section-title">📋 异常描述</div>
+      <div class="drawer-verdict"><div class="drawer-verdict-detail">${anomaly.desc}</div></div></div>`;
+
+    // RCA Steps
+    html += `<div class="drawer-section"><div class="drawer-section-title">🔍 根因分析路径</div>`;
+    rcaSteps.forEach(step => {
+      const stepColor = step.status === 'fail' ? 'var(--red)' : step.status === 'warn' ? 'var(--orange)' : step.status === 'pass' ? 'var(--green)' : 'var(--text3)';
+      html += `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9;">
+        <div style="width:28px;height:28px;border-radius:50%;background:${stepColor}15;color:${stepColor};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0;">${step.step}</div>
+        <div style="flex:1;">
+          <div style="font-weight:600;font-size:13px;">${step.title}</div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-top:2px;">${step.detail}</div>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+
+    // Notes
+    html += `<div class="drawer-section"><div class="drawer-section-title">💬 备注与反馈 (${notes.length})</div>`;
+    html += '<div class="note-thread" id="rca-drawer-notes" style="max-height:240px;overflow-y:auto;">';
+    if (notes.length === 0) {
+      html += '<div class="muted" style="text-align:center;padding:16px;font-size:12px;">暂无备注，可以记录你的处理意见或反馈</div>';
+    } else {
+      notes.forEach((n, i) => {
+        const time = new Date(n.ts).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
+        html += `<div class="note-bubble note-user">
+          <div>${n.text.replace(/\n/g, '<br>')}</div>
+          <div class="note-time">我 · ${time}
+            <button class="note-delete-btn rca-drawer-del" data-idx="${i}" title="删除">✕</button>
+          </div>
+        </div>`;
+      });
+    }
+    html += '</div>';
+    html += `<div class="note-input-wrap">
+      <textarea class="note-input" id="rca-drawer-input" placeholder="输入备注或处理意见..." rows="2"></textarea>
+      <button class="note-send-btn" id="rca-drawer-send">发送</button>
+    </div></div>`;
+
+    U.html('drawer-body', html);
+
+    U.el('rca-drawer-send').addEventListener('click', () => {
+      const input = U.el('rca-drawer-input');
+      const text = input.value.trim();
+      if (!text) return;
+      addRCANote(anomalyId, text);
+      renderContent();
+      updateRCANoteIndicator(anomalyId);
+      setTimeout(() => {
+        const thread = document.getElementById('rca-drawer-notes');
+        if (thread) thread.scrollTop = thread.scrollHeight;
+      }, 50);
+    });
+
+    U.el('rca-drawer-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); U.el('rca-drawer-send').click(); }
+    });
+
+    document.querySelectorAll('.rca-drawer-del').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteRCANote(anomalyId, parseInt(btn.dataset.idx));
+        renderContent();
+        updateRCANoteIndicator(anomalyId);
+      });
+    });
+  }
+
+  renderContent();
+  overlay.classList.add('open');
+  drawer.classList.add('open');
+}
+
 function renderAnomalyList(filter) {
   const filtered = filter === 'all' ? ALL_ANOMALIES : ALL_ANOMALIES.filter(a => a.severity === filter);
   const sevIcon = { critical: '🔴', warning: '🟡', info: '💡', positive: '🟢' };
 
   let html = '';
   filtered.forEach((a, i) => {
-    const rcaSteps = Engine.buildRootCause(a, KW_MAP, ST_MAP, DEV_MAP);
-    let rcaHtml = '';
-    rcaSteps.forEach(step => {
-      rcaHtml += `<div class="rca-step step-${step.status}">
-        <div class="rca-step-num">${step.step}</div>
-        <div class="rca-step-content">
-          <div class="rca-step-title">${step.title}</div>
-          <div class="rca-step-detail">${step.detail}</div>
-        </div>
-      </div>`;
-    });
-
     const anomalyId = `rca__${(a.title||'').substring(0,40).replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g,'_')}__${i}`;
     const existingNotes = getRCANotes(anomalyId);
     const noteIndicator = existingNotes.length > 0 ? `<span style="font-size:11px;margin-left:8px;">💬 ${existingNotes.length}</span>` : '';
 
-    html += `<div class="anomaly-card sev-${a.severity}" data-idx="${i}" data-anomaly-id="${anomalyId}" onclick="toggleAnomaly(this)">
+    html += `<div class="anomaly-card sev-${a.severity} diag-item" data-idx="${i}" data-anomaly-id="${anomalyId}" style="cursor:pointer;">
       <div class="anomaly-header">
         <div class="anomaly-sev">${sevIcon[a.severity] || '⚪'}</div>
         <div class="anomaly-info">
@@ -824,18 +897,7 @@ function renderAnomalyList(filter) {
             ${U.badge(a.type.replace(/_/g, ' '), a.severity === 'critical' ? 'bad' : a.severity === 'positive' ? 'good' : 'warn')}
           </div>
         </div>
-        <div class="anomaly-expand-icon">▼</div>
-      </div>
-      <div class="anomaly-body">
-        <div class="rca-steps">${rcaHtml}</div>
-        <div class="rca-notes-section" data-aid="${anomalyId}">
-          <div class="drawer-section-title" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-light);">💬 备注与反馈</div>
-          <div class="note-thread rca-note-thread" id="rca-notes-${i}" style="max-height:200px;overflow-y:auto;"></div>
-          <div class="note-input-wrap">
-            <textarea class="note-input rca-note-input" placeholder="记录处理意见或反馈..." rows="2" data-aid="${anomalyId}" data-list-idx="${i}"></textarea>
-            <button class="note-send-btn rca-note-send" data-aid="${anomalyId}" data-list-idx="${i}">发送</button>
-          </div>
-        </div>
+        <div style="color:var(--text3);font-size:18px;">→</div>
       </div>
     </div>`;
   });
@@ -843,40 +905,21 @@ function renderAnomalyList(filter) {
   if (!html) html = '<div class="trust-card trust-ok"><div class="trust-title">无异常</div><div class="trust-detail">该分类下暂无检测到的异常。</div></div>';
   U.html('anomaly-list', html);
 
-  // Render all note threads and bind events
-  document.querySelectorAll('.rca-note-send').forEach(btn => {
-    const aid = btn.dataset.aid;
-    const listIdx = parseInt(btn.dataset.listIdx);
-    renderRCANotesThread(aid, listIdx);
-
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const input = document.querySelector(`.rca-note-input[data-aid="${aid}"]`);
-      const text = input ? input.value.trim() : '';
-      if (!text) return;
-      addRCANote(aid, text);
-      input.value = '';
-      renderRCANotesThread(aid, listIdx);
-      updateRCANoteIndicator(aid);
-    });
-  });
-
-  document.querySelectorAll('.rca-note-input').forEach(input => {
-    input.addEventListener('click', (e) => e.stopPropagation());
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        const aid = input.dataset.aid;
-        const btn = document.querySelector(`.rca-note-send[data-aid="${aid}"]`);
-        if (btn) btn.click();
-      }
+  // Bind click to open drawer
+  document.querySelectorAll('#anomaly-list .anomaly-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const idx = parseInt(card.dataset.idx);
+      const a = filtered[idx];
+      if (!a) return;
+      const anomalyId = card.dataset.anomalyId;
+      const rcaSteps = Engine.buildRootCause(a, KW_MAP, ST_MAP, DEV_MAP);
+      openRCADrawer(a, anomalyId, rcaSteps);
     });
   });
 }
 
 function toggleAnomaly(card) {
-  card.classList.toggle('expanded');
+  // Legacy — now handled by drawer click
 }
 
 // ═══════════════════════════════════════
@@ -3008,6 +3051,7 @@ function renderNegKWCenter() {
             <li>或改为"完全匹配"否定 → <code>[${e.keyword}]</code></li>
             <li>确认在搜索词报告中该词确实无转化价值</li>
           </ul>`;
+        extraHtml = buildAffectedSTHtml(e.keyword, e.campaign, e.matchType);
       } else if (type === 'dup') {
         const d = dupList[idx]; if (!d) return;
         diagId = makeDiagId('dup', d.keyword, '');

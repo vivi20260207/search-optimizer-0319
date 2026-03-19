@@ -151,12 +151,19 @@ function renderChangeLog() {
   const today = new Date().toISOString().slice(0, 10);
   const todayCount = dateCount[today] || 0;
 
+  // Count bidding-related changes (virtual category)
+  const BID_FIELDS = ['target_roas', 'target_cpa_micros', 'bidding_strategy_type', 'cpc_bid_micros', 'target_spend_micros'];
+  const bidCount = CHANGE_LOG.filter(e =>
+    (e.changedFields || []).some(f => BID_FIELDS.some(bf => f.includes(bf)))
+  ).length;
+
   // Build dynamic entity type filter from actual data
   const typeFilter = $('cl-filter-type');
   const typeOrder = ['Campaign否定词', '素材', 'Campaign', '预算', '广告组', '广告', '关键词',
     '出价调整', '广告组素材', 'Campaign素材'];
   const typeLabels = { 'Campaign否定词': '排除项' };
   let typeOpts = '<option value="all">全部实体</option>';
+  if (bidCount > 0) typeOpts += `<option value="__bid__">出价调整 (${bidCount})</option>`;
   typeOrder.forEach(t => {
     if (typeCount[t]) typeOpts += `<option value="${t}">${typeLabels[t] || t} (${typeCount[t]})</option>`;
   });
@@ -204,7 +211,12 @@ function filterChangeLog() {
   if (accountVal !== 'all') filtered = filtered.filter(e => e.accountId === accountVal);
   if (campVal !== 'all') filtered = filtered.filter(e => e.campaign === campVal);
   if (typeVal !== 'all') {
-    if (typeVal === '广告') {
+    if (typeVal === '__bid__') {
+      const bidF = ['target_roas', 'target_cpa_micros', 'bidding_strategy_type', 'cpc_bid_micros', 'target_spend_micros'];
+      filtered = filtered.filter(e =>
+        (e.changedFields || []).some(f => bidF.some(bf => f.includes(bf)))
+      );
+    } else if (typeVal === '广告') {
       filtered = filtered.filter(e => e.resourceType === '广告' || e.resourceType === 'AD');
     } else {
       filtered = filtered.filter(e => e.resourceType === typeVal);

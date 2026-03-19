@@ -97,6 +97,36 @@ def client_type_label(val):
         "INTERNAL_TOOL": "内部工具", "OTHER": "其他",
     }.get(n, n)
 
+def _extract_target_roas(camp):
+    """Try multiple paths to get target_roas from a campaign resource."""
+    if not camp: return ""
+    paths = [
+        lambda c: c.maximize_conversion_value.target_roas,
+        lambda c: c.target_roas.target_roas,
+    ]
+    for fn in paths:
+        try:
+            v = fn(camp)
+            if v and v > 0:
+                return str(round(v, 4))
+        except: pass
+    return ""
+
+def _extract_target_cpa(camp):
+    """Try multiple paths to get target_cpa from a campaign resource."""
+    if not camp: return ""
+    paths = [
+        lambda c: c.maximize_conversions.target_cpa_micros,
+        lambda c: c.target_cpa.target_cpa_micros,
+    ]
+    for fn in paths:
+        try:
+            v = fn(camp)
+            if v and v > 0:
+                return str(micros(v))
+        except: pass
+    return ""
+
 def extract_detail(ce):
     fields = list(ce.changed_fields.paths) if ce.changed_fields and ce.changed_fields.paths else []
     details = []
@@ -118,12 +148,31 @@ def extract_detail(ce):
                 elif "keyword" in f:
                     new_val = new_r.ad_group_criterion.keyword.text if new_r and new_r.ad_group_criterion and hasattr(new_r.ad_group_criterion, 'keyword') and new_r.ad_group_criterion.keyword else ""
             elif rt == "CAMPAIGN":
+                c_old = old_r.campaign if old_r else None
+                c_new = new_r.campaign if new_r else None
                 if "status" in f:
-                    old_val = old_r.campaign.status.name if old_r and old_r.campaign and old_r.campaign.status else ""
-                    new_val = new_r.campaign.status.name if new_r and new_r.campaign and new_r.campaign.status else ""
+                    old_val = c_old.status.name if c_old and c_old.status else ""
+                    new_val = c_new.status.name if c_new and c_new.status else ""
+                elif "target_roas" in f:
+                    old_val = _extract_target_roas(c_old)
+                    new_val = _extract_target_roas(c_new)
+                elif "target_cpa" in f:
+                    old_val = _extract_target_cpa(c_old)
+                    new_val = _extract_target_cpa(c_new)
+                elif "bidding_strategy_type" in f:
+                    old_val = c_old.bidding_strategy_type.name if c_old and c_old.bidding_strategy_type else ""
+                    new_val = c_new.bidding_strategy_type.name if c_new and c_new.bidding_strategy_type else ""
                 elif "bidding" in f.lower():
-                    old_val = old_r.campaign.bidding_strategy_type.name if old_r and old_r.campaign and old_r.campaign.bidding_strategy_type else ""
-                    new_val = new_r.campaign.bidding_strategy_type.name if new_r and new_r.campaign and new_r.campaign.bidding_strategy_type else ""
+                    old_val = c_old.bidding_strategy_type.name if c_old and c_old.bidding_strategy_type else ""
+                    new_val = c_new.bidding_strategy_type.name if c_new and c_new.bidding_strategy_type else ""
+                elif "ad_serving_optimization_status" in f:
+                    try:
+                        old_val = c_old.ad_serving_optimization_status.name if c_old and c_old.ad_serving_optimization_status else ""
+                        new_val = c_new.ad_serving_optimization_status.name if c_new and c_new.ad_serving_optimization_status else ""
+                    except: pass
+                elif "name" in f and "resource" not in f:
+                    old_val = c_old.name if c_old and c_old.name else ""
+                    new_val = c_new.name if c_new and c_new.name else ""
             elif rt == "AD_GROUP":
                 if "status" in f:
                     old_val = old_r.ad_group.status.name if old_r and old_r.ad_group and old_r.ad_group.status else ""

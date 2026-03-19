@@ -17,6 +17,31 @@ function regKW(campName, arr) { if (arr && arr.length) KW_MAP[campName] = arr; }
 function regST(campName, arr) { if (arr && arr.length) ST_MAP[campName] = arr; }
 function regDEV(campName, arr) { if (arr && arr.length) DEV_MAP[campName] = arr; }
 
+// Normalize all numeric fields to avoid floating-point tails
+// (e.g. 212.32999999999998 -> 212.33). This runs once at load time.
+function round2(n) {
+  return Number(Number(n).toFixed(2));
+}
+function normalizeRecords(records) {
+  if (!Array.isArray(records)) return;
+  records.forEach(rec => {
+    if (!rec || typeof rec !== 'object') return;
+    Object.keys(rec).forEach(k => {
+      if (typeof rec[k] === 'number' && Number.isFinite(rec[k])) {
+        rec[k] = round2(rec[k]);
+      }
+    });
+  });
+}
+function normalizeMapData(mapObj) {
+  Object.values(mapObj).forEach(normalizeRecords);
+}
+normalizeRecords(CAMPAIGN_SUMMARY);
+const ADW_MISSING_TEXT = '数据缺失（ADW未返回）';
+function qsFieldText(v) {
+  return (v === '' || v == null) ? ADW_MISSING_TEXT : v;
+}
+
 regKW('pu-web-IN-2.5-竞品词-6.14重开', typeof ADW_PU_IN_COMP_KEYWORDS !== 'undefined' ? ADW_PU_IN_COMP_KEYWORDS : []);
 regKW('pu-web-IN-2.5-品牌词-6.16', typeof ADW_PU_IN_BRAND_KEYWORDS !== 'undefined' ? ADW_PU_IN_BRAND_KEYWORDS : []);
 regKW('Ppt-web-UK-2.5-1.18-homepage', typeof ADW_PPT_UK_KEYWORDS !== 'undefined' ? ADW_PPT_UK_KEYWORDS : []);
@@ -37,12 +62,115 @@ regDEV('Ft-web-US-2.5-Display-12.26-homepage', typeof ADW_FT_US_DEVICES !== 'und
 regDEV('Ppt-web-UK-2.5-1.18-homepage', typeof ADW_PPT_UK_DEVICES !== 'undefined' ? ADW_PPT_UK_DEVICES : []);
 regDEV('Ppt-web-US-2.5-1.17-homepage', typeof ADW_PPT_US_DEVICES !== 'undefined' ? ADW_PPT_US_DEVICES : []);
 
+normalizeMapData(KW_MAP);
+normalizeMapData(ST_MAP);
+normalizeMapData(DEV_MAP);
+
 const ASSET_MAP = {};
 function regAsset(campName, arr) { if (arr && arr.length) ASSET_MAP[campName] = arr; }
 regAsset('pu-web-IN-2.5-竞品词-6.14重开', typeof ADW_PU_IN_COMP_ASSETS !== 'undefined' ? ADW_PU_IN_COMP_ASSETS : []);
 regAsset('Ft-web-US-2.5-Display-12.26-homepage', typeof ADW_FT_US_ASSETS !== 'undefined' ? ADW_FT_US_ASSETS : []);
 regAsset('Ppt-web-2.5-AR+UAE+IL+QA-2.3', typeof ADW_PPT_ME_PMAX_ASSETS !== 'undefined' ? ADW_PPT_ME_PMAX_ASSETS : []);
 regAsset('Ppt-web-US-2.5-Pmax-1.20-homepage', typeof ADW_PPT_US_PMAX_ASSETS !== 'undefined' ? ADW_PPT_US_PMAX_ASSETS : []);
+
+// ─── Auto-register ALL campaigns from adw_data_daily.js ───
+const CAMP_DAILY_MAP = {};
+
+(function autoRegisterDaily() {
+  const globals = Object.keys(window);
+
+  // Campaign Daily → CAMP_DAILY_MAP (raw daily rows, for trend charts)
+  globals.filter(k => k.startsWith('ADW_CAMP_') && Array.isArray(window[k]) && window[k].length > 0)
+    .forEach(k => {
+      const camp = window[k][0].campaign;
+      if (camp) CAMP_DAILY_MAP[camp] = window[k];
+    });
+
+  // Keywords Daily → aggregate by campaign+adGroup+keyword, register into KW_MAP
+  globals.filter(k => k.startsWith('ADW_KW_') && Array.isArray(window[k]) && window[k].length > 0)
+    .forEach(k => {
+      const camp = window[k][0].campaign;
+      if (!camp || KW_MAP[camp]) return;
+      const agg = {};
+      window[k].forEach(r => {
+        const key = r.adGroup + '|||' + r.keyword + '|||' + r.matchType;
+        if (!agg[key]) {
+          agg[key] = {
+            campaign: r.campaign, adGroup: r.adGroup, keyword: r.keyword,
+            matchType: r.matchType, status: '有效',
+            clicks: 0, impressions: 0, cost: 0,
+            purchaseNew: 0, purchaseNewValue: 0,
+            cpc: 0, cpa: 0, impressionShare: '< 10%',
+            qualityScore: '', expectedCTR: '', landingPageExp: '', adRelevance: '',
+            _latestQS: null
+          };
+        }
+        const a = agg[key];
+        a.clicks += r.clicks || 0;
+        a.impressions += r.impressions || 0;
+        a.cost += r.cost || 0;
+        a.purchaseNew += r.conversions || 0;
+        a.purchaseNewValue += r.revenue || 0;
+        if (r.qualityScore && r.qualityScore > 0) a._latestQS = r.qualityScore;
+        if (r.expectedCTR) a.expectedCTR = r.expectedCTR;
+        if (r.landingPageExp) a.landingPageExp = r.landingPageExp;
+      });
+      const arr = Object.values(agg).map(a => {
+        a.cpc = a.clicks > 0 ? +(a.cost / a.clicks).toFixed(2) : 0;
+        a.cpa = a.purchaseNew > 0 ? +(a.cost / a.purchaseNew).toFixed(2) : 0;
+        a.qualityScore = a._latestQS || '';
+        delete a._latestQS;
+        return a;
+      });
+      regKW(camp, arr);
+    });
+
+  // Search Terms (aggregated) → register into ST_MAP
+  globals.filter(k => k.startsWith('ADW_ST_') && Array.isArray(window[k]) && window[k].length > 0)
+    .forEach(k => {
+      const camp = window[k][0].campaign;
+      if (!camp || ST_MAP[camp]) return;
+      const arr = window[k].map(r => ({
+        campaign: r.campaign, adGroup: r.adGroup, term: r.term,
+        addedExcluded: r.addedExcluded || '',
+        clicks: r.clicks || 0, impressions: r.impressions || 0,
+        cost: r.cost || 0, cpc: r.cpc || 0,
+        purchaseNew: r.conversions || r.purchaseNew || 0,
+        purchaseNewValue: r.revenue || r.purchaseNewValue || 0,
+        matchType: r.matchType || ''
+      }));
+      regST(camp, arr);
+    });
+
+  // Devices Daily → aggregate by campaign+device, register into DEV_MAP
+  globals.filter(k => k.startsWith('ADW_DEV_') && Array.isArray(window[k]) && window[k].length > 0)
+    .forEach(k => {
+      const camp = window[k][0].campaign;
+      if (!camp || DEV_MAP[camp]) return;
+      const agg = {};
+      window[k].forEach(r => {
+        const d = r.device;
+        if (!agg[d]) agg[d] = { device: d, impressions: 0, clicks: 0, cost: 0, conversions: 0 };
+        agg[d].impressions += r.impressions || 0;
+        agg[d].clicks += r.clicks || 0;
+        agg[d].cost += r.cost || 0;
+        agg[d].conversions += r.conversions || 0;
+      });
+      const arr = Object.values(agg).map(a => {
+        a.cpc = a.clicks > 0 ? +(a.cost / a.clicks).toFixed(2) : 0;
+        a.ctr = a.impressions > 0 ? (a.clicks / a.impressions * 100).toFixed(2) + '%' : '0%';
+        a.cpa = a.conversions > 0 ? +(a.cost / a.conversions).toFixed(2) : 0;
+        a.convRate = a.clicks > 0 ? (a.conversions / a.clicks * 100).toFixed(2) + '%' : '0%';
+        return a;
+      });
+      regDEV(camp, arr);
+    });
+
+  console.log('[AutoReg] CAMP_DAILY:', Object.keys(CAMP_DAILY_MAP).length,
+    'KW:', Object.keys(KW_MAP).length,
+    'ST:', Object.keys(ST_MAP).length,
+    'DEV:', Object.keys(DEV_MAP).length);
+})();
 
 const FLAT_KW = [];
 Object.entries(KW_MAP).forEach(([camp, kws]) => {
@@ -305,38 +433,88 @@ function renderDrillDown() {
 
         // ─── Ad Copy Diagnostic Card ───
         {
-          let adStrength = '良好', adCls = 'clr-good', diagMsg = '✅ 文案与核心词匹配度较高';
+          let relScore = '良好', relCls = 'clr-good', relMsg = '✅ 文案与核心词匹配度较高';
           if (agQs !== null && agQs < 5) {
-            adStrength = '差'; adCls = 'clr-bad';
-            diagMsg = '⚠️ 核心关键词未出现在标题中，导致 Ad Relevance 极低';
+            relScore = '差'; relCls = 'clr-bad';
+            relMsg = '⚠️ 核心关键词未出现在标题中，导致 Ad Relevance 极低';
           } else if (agQs !== null && agQs < 7) {
-            adStrength = '一般'; adCls = 'clr-warn';
-            diagMsg = '💡 建议在标题 1 中固定高转化关键词';
+            relScore = '一般'; relCls = 'clr-warn';
+            relMsg = '💡 建议在标题 1 中固定高转化关键词';
+          } else if (agQs === null) {
+            relScore = '--'; relCls = 'clr-muted';
+            relMsg = 'QS 数据缺失，无法评估';
           }
 
           const assets = ASSET_MAP[c.name] || [];
-          let topHL = 'Random Video Calls with Girls';
-          let topDesc = 'Fast, high-quality 1v1 video chats. Meet new friends!';
-          if (assets.length > 0) {
-            const hls = assets.filter(a => a.type === '标题').sort((a,b) => (b.purchaseConv||0) - (a.purchaseConv||0));
-            const descs = assets.filter(a => a.type === '广告内容描述').sort((a,b) => (b.purchaseConv||0) - (a.purchaseConv||0));
-            if (hls.length > 0) topHL = hls[0].asset;
-            if (descs.length > 0) topDesc = descs[0].asset;
+          const headlines = assets.filter(a => a.type === '标题').sort((a,b) => (b.purchaseConv||0) - (a.purchaseConv||0));
+          const descs = assets.filter(a => a.type === '广告内容描述').sort((a,b) => (b.purchaseConv||0) - (a.purchaseConv||0));
+          const hasAssetData = headlines.length > 0 || descs.length > 0;
+
+          // Keyword coverage: check if top keywords appear in any headline
+          const topKws = ag.keywords.sort((x,y) => (y.cost||0) - (x.cost||0)).slice(0, 5);
+          let coverageHtml = '';
+          if (hasAssetData && topKws.length > 0) {
+            const hlTexts = headlines.map(h => h.asset.toLowerCase()).join(' ');
+            const covered = topKws.filter(k => hlTexts.includes(k.keyword.toLowerCase().split(' ').slice(0,2).join(' ')));
+            const coverPct = topKws.length > 0 ? (covered.length / topKws.length * 100).toFixed(0) : 0;
+            const coverCls = coverPct >= 60 ? 'clr-good' : coverPct >= 30 ? 'clr-warn' : 'clr-bad';
+            coverageHtml = `<div style="margin-top:8px;font-size:11px;"><span style="font-weight:600;">文案覆盖率：</span><span class="${coverCls}" style="font-weight:700;">${coverPct}%</span> <span class="muted">(Top ${topKws.length} 关键词中 ${covered.length} 个在标题中有覆盖)</span></div>`;
+          }
+
+          let adCopyHtml = '';
+          if (hasAssetData) {
+            const renderAssetRow = (a, rank, type) => {
+              const conv = U.fmt(a.purchaseConv || 0, 1);
+              const val = U.fmtK(Math.round(a.purchaseValue || 0));
+              const label = type === 'HL' ? '标题' : '描述';
+              return `<div style="display:flex;align-items:baseline;gap:6px;padding:3px 0;font-size:12px;"><span style="color:var(--text3);min-width:18px;">${rank}.</span><span style="flex:1;word-break:break-all;">${a.asset}</span><span class="muted" style="white-space:nowrap;font-size:10px;">${label} · 转化${conv} · ¥${val}</span></div>`;
+            };
+            const bestHL = headlines.slice(0, 3);
+            const bestDesc = descs.slice(0, 3);
+            const worstHL = headlines.length > 3 ? headlines.slice(-3).reverse() : [];
+            const worstDesc = descs.length > 3 ? descs.slice(-3).reverse() : [];
+
+            let greenListHtml = '';
+            bestHL.forEach((a, i) => greenListHtml += renderAssetRow(a, i+1, 'HL'));
+            bestDesc.forEach((a, i) => greenListHtml += renderAssetRow(a, i+1, 'DESC'));
+
+            let redListHtml = '';
+            if (worstHL.length > 0 || worstDesc.length > 0) {
+              worstHL.forEach((a, i) => redListHtml += renderAssetRow(a, i+1, 'HL'));
+              worstDesc.forEach((a, i) => redListHtml += renderAssetRow(a, i+1, 'DESC'));
+            }
+
+            adCopyHtml = `<div class="diag-copy">
+              <div class="diag-copy-label">🏆 资产表现红黑榜 (Campaign 级)</div>
+              <div style="display:flex;gap:14px;">
+                <div style="flex:1;background:var(--green-bg);border-radius:6px;padding:8px 10px;border:1px solid rgba(39,174,96,0.15);">
+                  <div style="font-size:10px;color:var(--green);font-weight:700;margin-bottom:4px;">🟢 Top 转化资产</div>
+                  ${greenListHtml}
+                </div>
+                ${redListHtml ? `<div style="flex:1;background:var(--red-bg);border-radius:6px;padding:8px 10px;border:1px solid rgba(231,76,60,0.15);">
+                  <div style="font-size:10px;color:var(--red);font-weight:700;margin-bottom:4px;">⚫ 低效资产（考虑替换）</div>
+                  ${redListHtml}
+                </div>` : ''}
+              </div>
+              ${coverageHtml}
+            </div>`;
+          } else {
+            adCopyHtml = `<div class="diag-copy">
+              <div class="diag-copy-label">📝 文案资产</div>
+              <div style="color:var(--text3);font-style:italic;font-size:13px;padding:12px 0;">无文案资产数据（ADW未返回）</div>
+              <div style="font-size:11px;color:var(--text3);">当前无法展示资产表现，请确认 ADW 后台是否有导出该 Campaign 的 Asset Report。</div>
+            </div>`;
           }
 
           html += `<tr class="row-L3 child-${agid}">
             <td colspan="14" style="padding:12px 16px 12px 48px;white-space:normal;background:#fafaff;">
               <div class="ad-copy-diag">
                 <div class="diag-strength">
-                  <div class="diag-strength-label">📝 RSA 广告效力 (Ad Strength)</div>
-                  <div class="diag-strength-val ${adCls}">${adStrength}</div>
-                  <div class="diag-msg">${diagMsg}</div>
+                  <div class="diag-strength-label">📝 文案与关键词相关性评估（基于 QS）</div>
+                  <div class="diag-strength-val ${relCls}">${relScore}</div>
+                  <div class="diag-msg">${relMsg}</div>
                 </div>
-                <div class="diag-copy">
-                  <div class="diag-copy-label">🔥 Top 曝光文案组合 (Campaign 级)</div>
-                  <div class="diag-copy-headline">${topHL} | 1v1 Live Chat</div>
-                  <div class="diag-copy-desc">${topDesc}</div>
-                </div>
+                ${adCopyHtml}
               </div>
             </td>
           </tr>`;
@@ -385,10 +563,10 @@ function renderDrillDown() {
             <td class="num">${kw.impressions ? U.fmtPct(U.pct(kw.clicks, kw.impressions)) : '--'}</td>
             <td class="num">${U.fmt(kw.cpc)}</td>
             <td style="font-size:10px;white-space:normal">
-              <span class="bold ${qsCls}">QS ${kw.qualityScore || '-'}</span>
-              <span class="${eCtr.cls}" data-tip="Expected CTR: ${kw.expectedCTR || '-'}">CTR${eCtr.text}</span>
-              <span class="${aRel.cls}" data-tip="Ad Relevance: ${kw.adRelevance || '-'}">Rel${aRel.text}</span>
-              <span class="${lpExp.cls}" data-tip="LP Exp: ${kw.landingPageExp || '-'}">LP${lpExp.text}</span>
+              <span class="bold ${qsCls}">QS ${kw.qualityScore || ADW_MISSING_TEXT}</span>
+              <span class="${eCtr.cls}" data-tip="Expected CTR: ${qsFieldText(kw.expectedCTR)}">CTR${eCtr.text}</span>
+              <span class="${aRel.cls}" data-tip="Ad Relevance: ${qsFieldText(kw.adRelevance)}">Rel${aRel.text}</span>
+              <span class="${lpExp.cls}" data-tip="LP Exp: ${qsFieldText(kw.landingPageExp)}">LP${lpExp.text}</span>
             </td>
             <td class="num"><span class="${kw.impressionShare === '< 10%' ? 'clr-bad' : ''}">${kw.impressionShare || '--'}</span></td>
             <td>${kwTags || ''}</td>
@@ -512,14 +690,19 @@ function toggleAnomaly(card) {
 // ═══════════════════════════════════════
 // 搜索词 & 关键词分析（增强版）
 // ═══════════════════════════════════════
-const ST_CAMP_MAP = {
-  'pu-in-comp': { label: 'Pu-IN-竞品词-6.14', kw: 'pu-web-IN-2.5-竞品词-6.14重开', st: 'pu-web-IN-2.5-竞品词-6.14重开' },
-  'pu-in-brand': { label: 'Pu-IN-品牌词-6.16', kw: 'pu-web-IN-2.5-品牌词-6.16', st: 'pu-web-IN-2.5-品牌词-6.16' },
-  'pu-in-emerald': { label: 'Pu-IN-emeraldchat-9.2', kw: 'Pu-web-IN-2.5-emeraldchat-9.2重开-emeraldchat页-TCPA', st: 'Pu-web-IN-2.5-emeraldchat-9.2重开-emeraldchat页-TCPA' },
-  'ft-in-func': { label: 'Ft-IN-功能词-TCPA', kw: 'ft-web-IN-2.5-广泛-1.17-功能词-首页-TCPA', st: 'ft-web-IN-2.5-广泛-1.17-功能词-首页-TCPA' },
-  'ppt-uk': { label: 'Ppt-UK-1.18-homepage', kw: 'Ppt-web-UK-2.5-1.18-homepage', st: 'Ppt-web-UK-2.5-1.18-homepage' },
-  'ppt-us': { label: 'Ppt-US-1.17-homepage', kw: 'Ppt-web-US-2.5-1.17-homepage', st: 'Ppt-web-US-2.5-1.17-homepage' },
-};
+// Auto-build ST_CAMP_MAP from all campaigns that have both KW and ST data
+const ST_CAMP_MAP = {};
+(function buildSTCampMap() {
+  const allCamps = new Set([...Object.keys(KW_MAP), ...Object.keys(ST_MAP)]);
+  let idx = 0;
+  allCamps.forEach(camp => {
+    if (ST_MAP[camp] || KW_MAP[camp]) {
+      const key = 'camp-' + idx++;
+      const shortName = typeof U !== 'undefined' && U.campShortName ? U.campShortName(camp) : camp;
+      ST_CAMP_MAP[key] = { label: shortName, kw: camp, st: camp };
+    }
+  });
+})();
 
 function initSearchTermsModule() {
   const sel = U.el('st-campaign-select');
@@ -694,7 +877,7 @@ function renderSearchTermsEnhanced() {
           <td class="num">${U.fmt(k.purchaseNewValue || 0)}</td>
           <td class="num">${k.cpa > 0 ? U.fmt(k.cpa) : '--'}</td>
           <td class="num bold ${roasCls}">${k.roas > 0 ? U.fmt(k.roas) : '--'}</td>
-          <td class="num bold ${qsColor}">${k.qualityScore || '--'}</td>
+          <td class="num bold ${qsColor}">${k.qualityScore || ADW_MISSING_TEXT}</td>
           <td>${qsCpcTag}</td>
           <td class="num ${k.impressionShare === '< 10%' ? 'clr-bad' : ''}">${k.impressionShare || '--'}</td>
           <td>${kwTag(k)}</td>
@@ -711,8 +894,8 @@ function renderSearchTermsEnhanced() {
           <td>${k.matchType || '--'}</td><td>${k.adGroup || '--'}</td><td>${k.status || '--'}</td>
           <td class="num bold clr-good">${k.purchaseNew || 0}</td>
           <td class="num">${U.fmt(k.purchaseNewValue || 0)}</td>
-          <td class="num bold ${qsColor}">${k.qualityScore || '--'}</td>
-          <td>${k.expectedCTR || '--'}</td><td>${k.landingPageExp || '--'}</td><td>${k.adRelevance || '--'}</td>
+          <td class="num bold ${qsColor}">${k.qualityScore || ADW_MISSING_TEXT}</td>
+          <td>${qsFieldText(k.expectedCTR)}</td><td>${qsFieldText(k.landingPageExp)}</td><td>${qsFieldText(k.adRelevance)}</td>
           <td class="num">${k.impressionShare || '--'}</td>
           <td>${kwTag(k)}</td>
         </tr>`;
@@ -883,24 +1066,27 @@ function openKeywordDrawer(kw, allTerms, campLabel) {
   U.html('drawer-subtitle', `${campLabel} → ${kw.adGroup || '默认'} | ${kw.matchType || '未知'}`);
 
   let body = '';
+  const hasQS = kw.qualityScore !== '' && kw.qualityScore != null;
+  const qsDisplay = hasQS ? kw.qualityScore : ADW_MISSING_TEXT;
 
   // KPI metrics
   body += `<div class="drawer-section"><div class="drawer-section-title">📈 核心指标</div><div class="drawer-metrics">
     <div class="drawer-metric"><div class="label">点击</div><div class="value">${U.fmtK(kw.clicks || 0)}</div></div>
     <div class="drawer-metric"><div class="label">花费</div><div class="value">${U.fmtK(Math.round(kw.cost || 0))}</div></div>
     <div class="drawer-metric"><div class="label">新付费</div><div class="value" style="color:var(--green)">${kw.purchaseNew || 0}</div></div>
-    <div class="drawer-metric"><div class="label">QS</div><div class="value" style="color:${Number(kw.qualityScore) >= 8 ? 'var(--green)' : Number(kw.qualityScore) >= 6 ? 'var(--orange)' : kw.qualityScore ? 'var(--red)' : 'var(--text3)'}">${kw.qualityScore || '--'}</div></div>
+    <div class="drawer-metric"><div class="label">QS</div><div class="value" style="color:${Number(kw.qualityScore) >= 8 ? 'var(--green)' : Number(kw.qualityScore) >= 6 ? 'var(--orange)' : hasQS ? 'var(--red)' : 'var(--text3)'}">${qsDisplay}</div></div>
     <div class="drawer-metric"><div class="label">CPA</div><div class="value">${kw.cpa > 0 ? U.fmt(kw.cpa) : '--'}</div></div>
     <div class="drawer-metric"><div class="label">IS</div><div class="value" style="color:${kw.impressionShare === '< 10%' ? 'var(--red)' : 'var(--text)'}">${kw.impressionShare || '--'}</div></div>
   </div></div>`;
 
   // QS breakdown
-  if (kw.qualityScore) {
-    const qsColor = (val) => val && val.includes('高于') ? 'var(--green)' : val && val.includes('低于') ? 'var(--red)' : 'var(--orange)';
+  if (hasQS) {
+    const qsColor = (val) => val && val.includes('高于') ? 'var(--green)' : val && val.includes('低于') ? 'var(--red)' : val ? 'var(--orange)' : 'var(--text3)';
+    const qsDimText = (val) => qsFieldText(val);
     body += `<div class="drawer-section"><div class="drawer-section-title">⭐ QS 三维拆解</div><div class="drawer-metrics">
-      <div class="drawer-metric"><div class="label">Expected CTR</div><div class="value" style="color:${qsColor(kw.expectedCTR)};font-size:12px">${kw.expectedCTR || '--'}</div></div>
-      <div class="drawer-metric"><div class="label">Ad Relevance</div><div class="value" style="color:${qsColor(kw.adRelevance)};font-size:12px">${kw.adRelevance || '--'}</div></div>
-      <div class="drawer-metric"><div class="label">LP Experience</div><div class="value" style="color:${qsColor(kw.landingPageExp)};font-size:12px">${kw.landingPageExp || '--'}</div></div>
+      <div class="drawer-metric"><div class="label">Expected CTR</div><div class="value" style="color:${qsColor(kw.expectedCTR)};font-size:12px">${qsDimText(kw.expectedCTR)}</div></div>
+      <div class="drawer-metric"><div class="label">Ad Relevance</div><div class="value" style="color:${qsColor(kw.adRelevance)};font-size:12px">${qsDimText(kw.adRelevance)}</div></div>
+      <div class="drawer-metric"><div class="label">LP Experience</div><div class="value" style="color:${qsColor(kw.landingPageExp)};font-size:12px">${qsDimText(kw.landingPageExp)}</div></div>
     </div></div>`;
   }
 
@@ -967,7 +1153,7 @@ function openKeywordDrawer(kw, allTerms, campLabel) {
       return 'Expected CTR 低于平均 → 广告标题对用户吸引力不足';
     }).join('；');
 
-    verdictDetail = `QS 综合分 = ${kw.qualityScore || '--'}，但存在维度短板：${dimDetail}。\n\n根本原因分析：「${adGroupName}」广告组内可能包含多个主题不同的关键词，共享同一组广告文案和落地页。"${kw.keyword}" 的搜索意图与组内其他关键词存在差异，导致文案/LP 匹配度被 Google 判定偏低${kw.cpc ? '，CPC 被推高到 ' + U.fmt(kw.cpc) : ''}。`;
+    verdictDetail = `QS 综合分 = ${qsFieldText(kw.qualityScore)}，但存在维度短板：${dimDetail}。\n\n根本原因分析：「${adGroupName}」广告组内可能包含多个主题不同的关键词，共享同一组广告文案和落地页。"${kw.keyword}" 的搜索意图与组内其他关键词存在差异，导致文案/LP 匹配度被 Google 判定偏低${kw.cpc ? '，CPC 被推高到 ' + U.fmt(kw.cpc) : ''}。`;
 
     actions.push({ icon: '🏗️', title: `核心操作：将 "${kw.keyword}" 拆分到独立广告组`, detail: `从「${adGroupName}」中提取该关键词，新建一个专属广告组（SKAG 策略）。拆组后可以精确控制：\n① 广告文案 → 围绕 "${kw.keyword}" 的搜索意图定制标题和描述\n② 落地页 → 指定与该词最匹配的页面\n③ 出价 → 独立设定 CPA/CPC 目标\n这是解决 QS 维度短板最有效的结构性方法。` });
 
@@ -993,7 +1179,7 @@ function openKeywordDrawer(kw, allTerms, campLabel) {
   } else if (qsAvg.length > 0 && hasCost && (kw.clicks || 0) > 20) {
     // All QS dimensions are "average" (none below, none above) — still room for optimization
     verdictTitle = '📊 QS 各维度"平均" — 有结构性提升空间';
-    verdictDetail = `QS = ${kw.qualityScore || '--'}，三个维度均为"平均水平"。虽然没有明显短板，但也意味着没有竞争优势。${kw.cpc ? 'CPC ' + U.fmt(kw.cpc) + ' 可能仍有下降空间。' : ''}如果该词的搜索量和转化潜力值得投入，拆组专项优化可将各维度推到"高于平均"。`;
+    verdictDetail = `QS = ${qsFieldText(kw.qualityScore)}，三个维度均为"平均水平"。虽然没有明显短板，但也意味着没有竞争优势。${kw.cpc ? 'CPC ' + U.fmt(kw.cpc) + ' 可能仍有下降空间。' : ''}如果该词的搜索量和转化潜力值得投入，拆组专项优化可将各维度推到"高于平均"。`;
     actions.push({ icon: '🏗️', title: `考虑拆分到独立广告组`, detail: `如果 "${kw.keyword}" 的搜索量和业务价值足够高，值得拆组做精细化运营：配专属文案 + 专属落地页 + 独立出价。目标是将 QS 各维度提升到"高于平均"。` });
 
   } else if (hasCost && (!kw.purchaseNew || kw.purchaseNew === 0) && (kw.clicks || 0) > 10) {
@@ -1004,6 +1190,13 @@ function openKeywordDrawer(kw, allTerms, campLabel) {
   } else {
     verdictTitle = '🟡 观察中';
     verdictDetail = '数据量尚不充分（花费低/点击少），无法做出可靠判断。建议继续积累 2-3 天数据后再决策。';
+  }
+  if (!hasQS) {
+    actions.unshift({
+      icon: 'ℹ️',
+      title: 'QS 数据缺失（ADW未返回）',
+      detail: '当前仅可基于花费/转化做诊断，无法进行 QS 三维（Expected CTR / Ad Relevance / LP Experience）分析。'
+    });
   }
 
   body += `<div class="drawer-section">
@@ -1046,7 +1239,7 @@ function openKeywordDrawer(kw, allTerms, campLabel) {
           <td class="muted">${k.adGroup || '--'}</td>
           <td class="num">${U.fmtK(Math.round(k.cost || 0))}</td>
           <td class="num bold clr-good">${k.purchaseNew || 0}</td>
-          <td class="num bold ${Number(k.qualityScore) >= 8 ? 'clr-good' : Number(k.qualityScore) >= 6 ? 'clr-warn' : k.qualityScore ? 'clr-bad' : 'clr-muted'}">${k.qualityScore || '--'}</td>
+          <td class="num bold ${Number(k.qualityScore) >= 8 ? 'clr-good' : Number(k.qualityScore) >= 6 ? 'clr-warn' : k.qualityScore ? 'clr-bad' : 'clr-muted'}">${k.qualityScore || ADW_MISSING_TEXT}</td>
           <td>${kwTag(k)}</td>
         </tr>`;
         }).join('')}
@@ -1140,9 +1333,9 @@ function renderQualityScore() {
       <td class="muted">${U.campShortName(k._camp)}</td>
       <td class="muted">${k.adGroup || '--'}</td>
       <td class="num bold ${qsCls}">${k.qualityScore}</td>
-      <td><span class="${eCtr.cls}">${eCtr.text} ${k.expectedCTR || '--'}</span></td>
-      <td><span class="${aRel.cls}">${aRel.text} ${k.adRelevance || '--'}</span></td>
-      <td><span class="${lpExp.cls}">${lpExp.text} ${k.landingPageExp || '--'}</span></td>
+      <td><span class="${eCtr.cls}">${eCtr.text} ${qsFieldText(k.expectedCTR)}</span></td>
+      <td><span class="${aRel.cls}">${aRel.text} ${qsFieldText(k.adRelevance)}</span></td>
+      <td><span class="${lpExp.cls}">${lpExp.text} ${qsFieldText(k.landingPageExp)}</span></td>
       <td class="num">${U.fmt(k.cpc)}</td>
       <td class="num">${U.fmtK(Math.round(k.cost || 0))}</td>
       <td class="num ${k.impressionShare === '< 10%' ? 'clr-bad' : ''}">${k.impressionShare || '--'}</td>
@@ -1451,9 +1644,9 @@ function renderClusterList() {
               <td class="num">${U.fmtK(Math.round(k.cost || 0))}</td>
               <td class="num">${U.fmtK(k.clicks || 0)}</td>
               <td class="num bold clr-good">${k.purchaseNew || 0}</td>
-              <td class="num bold ${qsCls}">${k.qualityScore || '--'}</td>
-              <td class="${arCls}">${k.adRelevance || '--'}</td>
-              <td class="${lpCls}">${k.landingPageExp || '--'}</td>
+              <td class="num bold ${qsCls}">${k.qualityScore || ADW_MISSING_TEXT}</td>
+              <td class="${arCls}">${qsFieldText(k.adRelevance)}</td>
+              <td class="${lpCls}">${qsFieldText(k.landingPageExp)}</td>
               <td class="num ${k.impressionShare === '< 10%' ? 'clr-bad' : ''}">${k.impressionShare || '--'}</td>
               <td>${kwTag(k)}</td>
             </tr>`;

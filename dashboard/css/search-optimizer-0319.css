@@ -941,6 +941,85 @@ td.num { font-variant-numeric: tabular-nums; }
 }
 .changes-summary-row:last-child { border-bottom: none; }
 
+/* ─── Diagnostic Notes / Conversation ─── */
+.diag-item { cursor: pointer; transition: background 0.15s; }
+.diag-item:hover { background: #f8fafc; }
+.diag-item.has-notes { position: relative; }
+.diag-item.has-notes::after {
+  content: '💬';
+  position: absolute;
+  right: 8px;
+  top: 6px;
+  font-size: 12px;
+}
+.note-thread { margin-top: 12px; }
+.note-bubble {
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  margin-bottom: 8px;
+  max-width: 90%;
+  position: relative;
+}
+.note-bubble.note-user {
+  background: var(--accent);
+  color: #fff;
+  margin-left: auto;
+  border-bottom-right-radius: 2px;
+}
+.note-bubble.note-system {
+  background: #f1f5f9;
+  color: var(--text);
+  border-bottom-left-radius: 2px;
+}
+.note-time {
+  font-size: 10px;
+  opacity: 0.6;
+  margin-top: 4px;
+}
+.note-input-wrap {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-light);
+}
+.note-input {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  outline: none;
+  resize: none;
+  min-height: 40px;
+  max-height: 120px;
+  font-family: inherit;
+}
+.note-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(67,97,238,0.15); }
+.note-send-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.note-send-btn:hover { background: #3b82f6; }
+.note-delete-btn {
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 6px;
+}
+.note-delete-btn:hover { color: var(--red); }
+
 @media (max-width: 1200px) {
   .kpi-grid-5, .kpi-grid-6 { grid-template-columns: repeat(3, 1fr); }
   .main { padding: 16px; }

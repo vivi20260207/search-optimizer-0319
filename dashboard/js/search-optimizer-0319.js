@@ -2649,6 +2649,92 @@ function renderNegKWCenter() {
     });
   });
 
+  // ── Notes/Conversation Storage (localStorage) ──
+  const NOTES_KEY = 'negkw_diag_notes';
+  function loadNotes() { try { return JSON.parse(localStorage.getItem(NOTES_KEY) || '{}'); } catch { return {}; } }
+  function saveNotes(notes) { localStorage.setItem(NOTES_KEY, JSON.stringify(notes)); }
+  function getNotes(diagId) { return (loadNotes()[diagId] || []).sort((a,b) => a.ts - b.ts); }
+  function addNote(diagId, text, role) {
+    const all = loadNotes();
+    if (!all[diagId]) all[diagId] = [];
+    all[diagId].push({ text, role: role || 'user', ts: Date.now() });
+    saveNotes(all);
+  }
+  function deleteNote(diagId, idx) {
+    const all = loadNotes();
+    if (all[diagId]) { all[diagId].splice(idx, 1); saveNotes(all); }
+  }
+  function diagHasNotes(diagId) { return getNotes(diagId).length > 0; }
+
+  function makeDiagId(type, keyword, campaign) {
+    return `${type}__${(keyword||'').toLowerCase()}__${(campaign||'').substring(0,30)}`;
+  }
+
+  function openDiagDrawer(title, detail, diagId, extraHtml) {
+    const overlay = U.el('drawer-overlay');
+    const drawer = U.el('kw-drawer');
+    U.el('drawer-title').textContent = title;
+    U.el('drawer-subtitle').textContent = '';
+
+    function renderDrawerContent() {
+      const notes = getNotes(diagId);
+      let html = '';
+      html += `<div class="drawer-section"><div class="drawer-section-title">🔍 诊断详情</div>`;
+      html += `<div class="drawer-verdict"><div class="drawer-verdict-detail">${detail}</div></div></div>`;
+      if (extraHtml) {
+        html += `<div class="drawer-section">${extraHtml}</div>`;
+      }
+      html += `<div class="drawer-section"><div class="drawer-section-title">💬 备注与反馈 (${notes.length})</div>`;
+      html += `<div class="note-thread" id="diag-note-thread">`;
+      notes.forEach((n, i) => {
+        const time = new Date(n.ts).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
+        html += `<div class="note-bubble note-${n.role}">
+          <div>${n.text.replace(/\n/g, '<br>')}</div>
+          <div class="note-time">${n.role === 'user' ? '我' : '系统'} · ${time}
+            <button class="note-delete-btn" data-idx="${i}" title="删除">✕</button>
+          </div>
+        </div>`;
+      });
+      if (notes.length === 0) {
+        html += '<div class="muted" style="text-align:center;padding:16px;font-size:12px;">暂无备注，可以记录你的处理意见或反馈</div>';
+      }
+      html += '</div>';
+      html += `<div class="note-input-wrap">
+        <textarea class="note-input" id="diag-note-input" placeholder="输入备注或处理意见..." rows="2"></textarea>
+        <button class="note-send-btn" id="diag-note-send">发送</button>
+      </div></div>`;
+      U.html('drawer-body', html);
+
+      U.el('diag-note-send').addEventListener('click', () => {
+        const input = U.el('diag-note-input');
+        const text = input.value.trim();
+        if (!text) return;
+        addNote(diagId, text, 'user');
+        renderDrawerContent();
+        setTimeout(() => {
+          const thread = U.el('diag-note-thread');
+          if (thread) thread.scrollTop = thread.scrollHeight;
+        }, 50);
+      });
+
+      U.el('diag-note-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); U.el('diag-note-send').click(); }
+      });
+
+      document.querySelectorAll('.note-delete-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteNote(diagId, parseInt(btn.dataset.idx));
+          renderDrawerContent();
+        });
+      });
+    }
+
+    renderDrawerContent();
+    overlay.classList.add('open');
+    drawer.classList.add('open');
+  }
+
   // ── KPI Cards ──
   const campLevel = NEG_KW.filter(e => e.level === 'Campaign').length;
   const agLevel = NEG_KW.filter(e => e.level === '广告组').length;
@@ -2676,9 +2762,11 @@ function renderNegKWCenter() {
   if (conflicts.length === 0) {
     diagHtml += '<div class="muted" style="padding:20px;text-align:center;">✅ 未发现正负冲突</div>';
   } else {
-    conflicts.forEach(e => {
+    conflicts.forEach((e, i) => {
       const d = e._diags.find(d => d.type === 'conflict');
-      diagHtml += `<div style="padding:6px 0;border-bottom:1px solid #f1f5f9;">
+      const did = makeDiagId('conflict', e.keyword, e.campaign);
+      const hasN = diagHasNotes(did);
+      diagHtml += `<div class="diag-item ${hasN ? 'has-notes' : ''}" style="padding:6px 0;border-bottom:1px solid #f1f5f9;" data-diag-type="conflict" data-diag-idx="${i}">
         <span class="badge badge-bad" style="font-size:10px;">${e.matchType}</span>
         <strong>${e.keyword}</strong>
         <span class="muted" style="font-size:11px;"> — 否定于 ${U.campShortName(e.campaign)}</span>
@@ -2689,12 +2777,15 @@ function renderNegKWCenter() {
   diagHtml += '</div></div>';
 
   // Gap card
+  gapAlerts.sort((a, b) => b.spend - a.spend);
   diagHtml += `<div class="card"><div class="card-header"><h3>🕳️ 漏网之鱼检测 (${gapAlerts.length})</h3></div><div class="card-body" style="max-height:280px;overflow-y:auto;font-size:13px;">`;
   if (gapAlerts.length === 0) {
     diagHtml += '<div class="muted" style="padding:20px;text-align:center;">✅ 未发现跨Campaign遗漏</div>';
   } else {
-    gapAlerts.sort((a, b) => b.spend - a.spend).slice(0, 30).forEach(g => {
-      diagHtml += `<div style="padding:6px 0;border-bottom:1px solid #f1f5f9;">
+    gapAlerts.slice(0, 30).forEach((g, i) => {
+      const did = makeDiagId('gap', g.keyword, g.missingIn);
+      const hasN = diagHasNotes(did);
+      diagHtml += `<div class="diag-item ${hasN ? 'has-notes' : ''}" style="padding:6px 0;border-bottom:1px solid #f1f5f9;" data-diag-type="gap" data-diag-idx="${i}">
         <strong>"${g.keyword}"</strong> 在 <span class="badge badge-good" style="font-size:10px;">${U.campShortName(g.negatedIn)}</span> 已否定
         <br><span class="clr-bad">但在 <strong>${U.campShortName(g.missingIn)}</strong> 仍花费 $${U.fmt(g.spend)}</span>
         ${g.convs > 0 ? `<span class="clr-warn"> (${g.convs} 转化，需确认是否误杀)</span>` : '<span class="muted"> (0 转化，建议也否定)</span>'}
@@ -2709,9 +2800,11 @@ function renderNegKWCenter() {
   if (broadAlerts.length === 0) {
     diagHtml += '<div class="muted" style="padding:20px;text-align:center;">✅ 未发现匹配类型风险</div>';
   } else {
-    broadAlerts.forEach(e => {
+    broadAlerts.forEach((e, i) => {
       const d = e._diags.find(d => d.type === 'too-broad');
-      diagHtml += `<div style="padding:6px 0;border-bottom:1px solid #f1f5f9;">
+      const did = makeDiagId('broad', e.keyword, e.campaign);
+      const hasN = diagHasNotes(did);
+      diagHtml += `<div class="diag-item ${hasN ? 'has-notes' : ''}" style="padding:6px 0;border-bottom:1px solid #f1f5f9;" data-diag-type="broad" data-diag-idx="${i}">
         <span class="badge badge-warn" style="font-size:10px;">广泛</span>
         <strong>${e.keyword}</strong>
         <span class="muted" style="font-size:11px;"> — ${U.campShortName(e.campaign)}</span>
@@ -2736,8 +2829,10 @@ function renderNegKWCenter() {
   if (dupList.length === 0) {
     diagHtml += '<div class="muted" style="padding:20px;text-align:center;">✅ 层级使用合理</div>';
   } else {
-    dupList.slice(0, 20).forEach(d => {
-      diagHtml += `<div style="padding:6px 0;border-bottom:1px solid #f1f5f9;">
+    dupList.slice(0, 20).forEach((d, i) => {
+      const did = makeDiagId('dup', d.keyword, '');
+      const hasN = diagHasNotes(did);
+      diagHtml += `<div class="diag-item ${hasN ? 'has-notes' : ''}" style="padding:6px 0;border-bottom:1px solid #f1f5f9;" data-diag-type="dup" data-diag-idx="${i}">
         <strong>"${d.keyword}"</strong> 在 <span class="clr-warn">${d.count} 个广告组</span> 重复否定
         <div class="muted" style="font-size:11px;margin-top:2px;">涉及: ${[...d.camps].join(', ')} — 建议提升为 Campaign 级否定</div>
       </div>`;
@@ -2746,6 +2841,72 @@ function renderNegKWCenter() {
   diagHtml += '</div></div>';
 
   U.html('negkw-diagnostics', diagHtml);
+
+  // ── Wire up clickable diagnostic items ──
+  document.querySelectorAll('#negkw-diagnostics .diag-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const type = el.dataset.diagType;
+      const idx = parseInt(el.dataset.diagIdx);
+      let title = '', detail = '', diagId = '', extraHtml = '';
+
+      if (type === 'conflict') {
+        const e = conflicts[idx]; if (!e) return;
+        const d = e._diags.find(d => d.type === 'conflict');
+        diagId = makeDiagId('conflict', e.keyword, e.campaign);
+        title = `⚠️ 正负冲突: ${e.keyword}`;
+        const posMatches = FLAT_KW.filter(k => k.keyword && k.keyword.toLowerCase().trim() === e.keyword.toLowerCase().trim());
+        detail = `<p><strong>否定词:</strong> "${e.keyword}" [${e.matchType}]</p>
+          <p><strong>否定所在:</strong> ${e.campaign}${e.adGroup ? ' / ' + e.adGroup : ''} (${e.level}级)</p>
+          <p><strong>冲突说明:</strong> ${d.detail}</p>
+          <p style="color:var(--red);font-weight:600;">此词同时作为正向关键词和否定词存在，Google 会优先使用否定词，导致正向关键词无法展现。</p>`;
+        if (posMatches.length > 0) {
+          extraHtml = '<div class="drawer-section-title">📊 正向关键词详情</div>';
+          posMatches.forEach(k => {
+            extraHtml += `<div style="padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12px;">
+              <strong>${k.keyword}</strong> [${k.matchType || ''}]<br>
+              <span class="muted">Campaign: ${U.campShortName(k._camp || k.campaign)}</span>
+              ${k.cost ? ` | 花费: $${U.fmt(k.cost)}` : ''}
+              ${k.conversions ? ` | 转化: ${k.conversions}` : ''}
+            </div>`;
+          });
+        }
+      } else if (type === 'gap') {
+        const g = gapAlerts[idx]; if (!g) return;
+        diagId = makeDiagId('gap', g.keyword, g.missingIn);
+        title = `🕳️ 漏网之鱼: ${g.keyword}`;
+        detail = `<p><strong>否定词:</strong> "${g.keyword}"</p>
+          <p><strong>已否定于:</strong> ${g.negatedIn}</p>
+          <p><strong>遗漏于:</strong> <span style="color:var(--red);font-weight:600;">${g.missingIn}</span></p>
+          <p><strong>遗漏Campaign花费:</strong> <span style="color:var(--red);">$${U.fmt(g.spend)}</span></p>
+          <p><strong>遗漏Campaign转化:</strong> ${g.convs || 0}</p>
+          <p>${g.convs > 0 ? '<span style="color:var(--orange);font-weight:600;">⚠️ 有转化! 请确认是否真的应该否定，可能在此Campaign中是有效流量。</span>' : '<span style="color:var(--green);">0 转化 + 有花费 → 建议也在此Campaign中添加否定。</span>'}</p>`;
+      } else if (type === 'broad') {
+        const e = broadAlerts[idx]; if (!e) return;
+        const d = e._diags.find(d => d.type === 'too-broad');
+        diagId = makeDiagId('broad', e.keyword, e.campaign);
+        title = `💥 匹配过宽: ${e.keyword}`;
+        detail = `<p><strong>否定词:</strong> "${e.keyword}" [${e.matchType}]</p>
+          <p><strong>所在:</strong> ${e.campaign} (${e.level}级)</p>
+          <p><strong>风险:</strong> ${d.detail}</p>
+          <p style="color:var(--orange);font-weight:600;">建议操作:</p>
+          <ul style="margin:6px 0;padding-left:18px;line-height:1.8;">
+            <li>改为"词组匹配"否定 → <code>"${e.keyword}"</code></li>
+            <li>或改为"完全匹配"否定 → <code>[${e.keyword}]</code></li>
+            <li>确认在搜索词报告中该词确实无转化价值</li>
+          </ul>`;
+      } else if (type === 'dup') {
+        const d = dupList[idx]; if (!d) return;
+        diagId = makeDiagId('dup', d.keyword, '');
+        title = `🔄 跨组重复: ${d.keyword}`;
+        detail = `<p><strong>否定词:</strong> "${d.keyword}"</p>
+          <p><strong>重复次数:</strong> <span style="color:var(--orange);">${d.count} 个广告组</span></p>
+          <p><strong>涉及Campaign:</strong> ${[...d.camps].join(', ')}</p>
+          <p style="color:var(--blue);font-weight:600;">建议操作: 将此否定词从各广告组中移除，统一添加到 Campaign 级否定词，减少管理复杂度。</p>`;
+      }
+
+      if (diagId) openDiagDrawer(title, detail, diagId, extraHtml);
+    });
+  });
 
   // ── Intent Category Chart ──
   const intentCounts = {};

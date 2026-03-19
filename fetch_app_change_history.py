@@ -14,14 +14,23 @@ OUTPUT_PATH = "dashboard/js/adw_data_app_changelog.js"
 START_DATE = "2026-02-19"
 END_DATE   = "2026-03-19"
 
-# TODO: Replace with actual App campaign account IDs after API authorization
 ACCOUNTS = [
-    # "XXXXXXXXXX",  # App Product 1
-    # "XXXXXXXXXX",  # App Product 2
+    "4720551746",  # Find Mate-IN-01
+    "9956162596",  # G-Max Security-0714-01
+    "8183373292",  # G-Weather Mate-IN-02
+    "8719323356",  # GPS Share-IN-01
+    "9723856754",  # KeepClean_HK_1
+    "3401728768",  # KeepClean_HK_2
+    "1384163864",  # Local Weather-HK-1
+    "4317744776",  # Local Weather-IN-01
+    "6656007143",  # MaxSecurity_IN_02
+    "2579044998",  # MyHealth_HK_1
+    "2376715297",  # Storage Clean-IN-01
+    "8799953811",  # Weather Pro-IN-01
 ]
 
 def make_client():
-    return GoogleAdsClient.load_from_storage("google-ads.yaml")
+    return GoogleAdsClient.load_from_storage("google-ads-app.yaml")
 
 def micros(v):
     return round(v / 1_000_000, 2) if v else 0

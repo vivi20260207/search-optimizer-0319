@@ -2,4 +2,5 @@
 .vercel
 fetch_adw_data.py
 google-ads.yaml
+google-ads-app.yaml
 test_adw_connection.py

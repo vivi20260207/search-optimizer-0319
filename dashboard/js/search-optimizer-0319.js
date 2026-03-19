@@ -401,6 +401,18 @@ function renderDrillDown() {
       <td>${tags || '<span class="muted">--</span>'}</td>
     </tr>`;
 
+    // ─── Campaign change summary (child of L1) ───
+    {
+      const campChanges = getChangesForCampaign(c.name, 5);
+      if (campChanges.length > 0) {
+        html += `<tr class="row-L2 child-${cid}">
+          <td colspan="14" style="padding:8px 16px 8px 32px;background:#fafaff;">
+            ${renderChangesSummary(campChanges, '最近变更')}
+          </td>
+        </tr>`;
+      }
+    }
+
     // ─── L2: Ad Groups ───
     if (kws.length) {
       const agMap = {};
@@ -454,6 +466,18 @@ function renderDrillDown() {
           <td class="muted">${ag.keywords.length} 词</td>
           <td>${agTags || ''}</td>
         </tr>`;
+
+        // ─── Ad Group change summary ───
+        {
+          const agChanges = getChangesForAdGroup(c.name, ag.name, 3);
+          if (agChanges.length > 0) {
+            html += `<tr class="row-L3 child-${agid}">
+              <td colspan="14" style="padding:6px 16px 6px 48px;background:#fefff8;">
+                ${renderChangesSummary(agChanges, ag.name + ' 最近变更')}
+              </td>
+            </tr>`;
+          }
+        }
 
         // ─── Ad Copy Diagnostic Card (fully data-driven) ───
         {
@@ -1869,19 +1893,23 @@ const GENDER_MAP = {};
 const AGE_MAP = {};
 
 (function autoRegisterDemographics() {
-  const globals = Object.keys(window);
-
-  globals.filter(k => k.startsWith('ADW_GENDER_') && Array.isArray(window[k]) && window[k].length > 0)
-    .forEach(k => {
-      const camp = window[k][0].campaign;
-      if (camp && !GENDER_MAP[camp]) GENDER_MAP[camp] = window[k];
+  if (typeof ADW_GENDER_REGISTRY !== 'undefined' && Array.isArray(ADW_GENDER_REGISTRY)) {
+    ADW_GENDER_REGISTRY.forEach(arr => {
+      if (Array.isArray(arr) && arr.length > 0 && arr[0].campaign) {
+        const camp = arr[0].campaign;
+        if (!GENDER_MAP[camp]) GENDER_MAP[camp] = arr;
+      }
     });
+  }
 
-  globals.filter(k => k.startsWith('ADW_AGE_') && Array.isArray(window[k]) && window[k].length > 0)
-    .forEach(k => {
-      const camp = window[k][0].campaign;
-      if (camp && !AGE_MAP[camp]) AGE_MAP[camp] = window[k];
+  if (typeof ADW_AGE_REGISTRY !== 'undefined' && Array.isArray(ADW_AGE_REGISTRY)) {
+    ADW_AGE_REGISTRY.forEach(arr => {
+      if (Array.isArray(arr) && arr.length > 0 && arr[0].campaign) {
+        const camp = arr[0].campaign;
+        if (!AGE_MAP[camp]) AGE_MAP[camp] = arr;
+      }
     });
+  }
 
   console.log('[AutoReg] GENDER:', Object.keys(GENDER_MAP).length, 'AGE:', Object.keys(AGE_MAP).length);
 })();
@@ -2074,30 +2102,32 @@ function renderAdCopy() {
   const descs     = results.filter(r => r.type === '描述').length;
 
   U.html('adcopy-kpis', `
-    <div class="kpi-card">
-      <div class="kpi-label">独立文案数</div>
-      <div class="kpi-value">${results.length}</div>
-      <div class="kpi-sub">标题 ${headlines} / 描述 ${descs}</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">总转化</div>
-      <div class="kpi-value clr-good">${U.fmtK(Math.round(totalConv))}</div>
-      <div class="kpi-sub">筛选范围内</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">总花费</div>
-      <div class="kpi-value">${U.fmtK(Math.round(totalCost))}</div>
-      <div class="kpi-sub">HKD</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">平均 CPA</div>
-      <div class="kpi-value ${avgCpa > 0 ? U.colorClassInverse(avgCpa, 50, 100) : ''}">${avgCpa > 0 ? U.fmt(avgCpa) : '--'}</div>
-      <div class="kpi-sub">HKD</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">整体 ROAS</div>
-      <div class="kpi-value ${avgRoas > 0 ? U.colorClass(avgRoas, 1.5, 0.8) : ''}">${avgRoas > 0 ? U.fmt(avgRoas) + 'x' : '--'}</div>
-      <div class="kpi-sub">Revenue / Cost</div>
+    <div class="kpi-grid kpi-grid-5">
+      <div class="kpi-card">
+        <div class="kpi-label">独立文案数</div>
+        <div class="kpi-value">${results.length}</div>
+        <div class="kpi-sub">标题 ${headlines} / 描述 ${descs}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">总转化</div>
+        <div class="kpi-value clr-good">${U.fmtK(Math.round(totalConv))}</div>
+        <div class="kpi-sub">筛选范围内</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">总花费</div>
+        <div class="kpi-value">${U.fmtK(Math.round(totalCost))}</div>
+        <div class="kpi-sub">HKD</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">平均 CPA</div>
+        <div class="kpi-value ${avgCpa > 0 ? U.colorClassInverse(avgCpa, 50, 100) : ''}">${avgCpa > 0 ? U.fmt(avgCpa) : '--'}</div>
+        <div class="kpi-sub">HKD</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">整体 ROAS</div>
+        <div class="kpi-value ${avgRoas > 0 ? U.colorClass(avgRoas, 1.5, 0.8) : ''}">${avgRoas > 0 ? U.fmt(avgRoas) + 'x' : '--'}</div>
+        <div class="kpi-sub">Revenue / Cost</div>
+      </div>
     </div>
   `);
 
@@ -2139,6 +2169,148 @@ function renderAdCopy() {
 }
 
 // ═══════════════════════════════════════
+// 变更日志模块
+// ═══════════════════════════════════════
+const CHANGE_LOG = (typeof ADW_CHANGE_HISTORY !== 'undefined' && Array.isArray(ADW_CHANGE_HISTORY)) ? ADW_CHANGE_HISTORY : [];
+
+function formatChangeDetail(entry) {
+  if (!entry.details || entry.details.length === 0) {
+    if (entry.changedFields && entry.changedFields.length > 0)
+      return entry.changedFields.map(f => `<span class="muted">${f.split('.').pop()}</span>`).join(', ');
+    return `<span class="muted">${entry.operation}</span>`;
+  }
+  return entry.details.map(d => {
+    const field = d.field || '?';
+    if (d.old && d.new) return `<span class="cl-field">${field}</span>: <span class="cl-old">${d.old}</span> → <span class="cl-new">${d.new}</span>`;
+    if (d.new) return `<span class="cl-field">${field}</span>: <span class="cl-new">${d.new}</span>`;
+    if (d.old) return `<span class="cl-field">${field}</span>: <del class="cl-old">${d.old}</del>`;
+    return `<span class="cl-field">${field}</span>`;
+  }).join('<br>');
+}
+
+function formatDateTime(dt) {
+  if (!dt) return '--';
+  const d = dt.replace(/\.\d+$/, '');
+  return d;
+}
+
+function opBadge(op) {
+  if (op === '新建') return '<span class="badge badge-good">新建</span>';
+  if (op === '修改') return '<span class="badge badge-warn">修改</span>';
+  if (op === '移除') return '<span class="badge badge-bad">移除</span>';
+  return `<span class="badge badge-neutral">${op}</span>`;
+}
+
+function typeBadge(t) {
+  const cls = { 'Campaign': 'search', '广告组': 'info', '关键词': 'func', '广告': 'neutral',
+    '预算': 'warn', 'Campaign否定词': 'bad', '出价调整': 'warn', '素材': 'neutral' };
+  return `<span class="badge badge-${cls[t] || 'neutral'}">${t}</span>`;
+}
+
+function renderChangeLog() {
+  if (CHANGE_LOG.length === 0) {
+    U.html('changelog-kpis', '<div class="kpi-card"><div class="kpi-label">变更记录</div><div class="kpi-value clr-muted">0</div><div class="kpi-sub">暂无数据，请运行 fetch_change_history.py</div></div>');
+    U.html('changelog-tbody', '<tr><td colspan="8" class="muted" style="text-align:center;padding:40px;">暂无变更历史数据</td></tr>');
+    return;
+  }
+
+  U.el('nav-change-count').textContent = CHANGE_LOG.length;
+
+  const campFilter = U.el('cl-filter-camp');
+  const camps = [...new Set(CHANGE_LOG.map(e => e.campaign).filter(Boolean))].sort();
+  campFilter.innerHTML = '<option value="all">全部 Campaign</option>' + camps.map(c => `<option value="${c}">${U.campShortName(c)}</option>`).join('');
+
+  const typeCount = {};
+  const opCount = {};
+  const dateCount = {};
+  CHANGE_LOG.forEach(e => {
+    typeCount[e.resourceType] = (typeCount[e.resourceType] || 0) + 1;
+    opCount[e.operation] = (opCount[e.operation] || 0) + 1;
+    const day = (e.dateTime || '').slice(0, 10);
+    if (day) dateCount[day] = (dateCount[day] || 0) + 1;
+  });
+
+  const today = new Date().toISOString().slice(0, 10);
+  const todayCount = dateCount[today] || 0;
+  const topType = Object.entries(typeCount).sort((a,b) => b[1] - a[1])[0] || ['--', 0];
+
+  U.html('changelog-kpis', `
+    <div class="kpi-card"><div class="kpi-label">总变更数</div><div class="kpi-value">${CHANGE_LOG.length}</div><div class="kpi-sub">近 30 天</div></div>
+    <div class="kpi-card"><div class="kpi-label">今日变更</div><div class="kpi-value ${todayCount > 0 ? 'clr-warn' : ''}">${todayCount}</div><div class="kpi-sub">${today}</div></div>
+    <div class="kpi-card"><div class="kpi-label">新建</div><div class="kpi-value clr-good">${opCount['新建'] || 0}</div></div>
+    <div class="kpi-card"><div class="kpi-label">修改</div><div class="kpi-value clr-warn">${opCount['修改'] || 0}</div></div>
+    <div class="kpi-card"><div class="kpi-label">移除</div><div class="kpi-value clr-bad">${opCount['移除'] || 0}</div></div>
+  `);
+
+  filterChangeLog();
+
+  campFilter.addEventListener('change', filterChangeLog);
+  U.el('cl-filter-type').addEventListener('change', filterChangeLog);
+  U.el('cl-filter-op').addEventListener('change', filterChangeLog);
+  U.el('cl-search').addEventListener('input', filterChangeLog);
+}
+
+function filterChangeLog() {
+  const campVal = U.el('cl-filter-camp').value;
+  const typeVal = U.el('cl-filter-type').value;
+  const opVal = U.el('cl-filter-op').value;
+  const searchVal = U.el('cl-search').value.trim().toLowerCase();
+
+  let filtered = CHANGE_LOG;
+  if (campVal !== 'all') filtered = filtered.filter(e => e.campaign === campVal);
+  if (typeVal !== 'all') filtered = filtered.filter(e => e.resourceType === typeVal);
+  if (opVal !== 'all') filtered = filtered.filter(e => e.operation === opVal);
+  if (searchVal.length >= 2) {
+    filtered = filtered.filter(e =>
+      (e.campaign || '').toLowerCase().includes(searchVal) ||
+      (e.adGroup || '').toLowerCase().includes(searchVal) ||
+      (e.userEmail || '').toLowerCase().includes(searchVal) ||
+      (e.resourceType || '').toLowerCase().includes(searchVal)
+    );
+  }
+
+  let html = '';
+  filtered.slice(0, 500).forEach(e => {
+    html += `<tr>
+      <td style="white-space:nowrap;font-size:11px;">${formatDateTime(e.dateTime)}</td>
+      <td class="muted" style="font-size:11px;">${e.userEmail ? e.userEmail.split('@')[0] : '--'}</td>
+      <td style="font-size:10px;">${e.clientType || '--'}</td>
+      <td class="bold" title="${e.campaign}">${U.campShortName(e.campaign || '--')}</td>
+      <td class="muted">${e.adGroup || '--'}</td>
+      <td>${typeBadge(e.resourceType)}</td>
+      <td>${opBadge(e.operation)}</td>
+      <td style="font-size:12px;white-space:normal;max-width:350px;">${formatChangeDetail(e)}</td>
+    </tr>`;
+  });
+
+  if (!html) html = '<tr><td colspan="8" class="muted" style="text-align:center;padding:30px;">无匹配的变更记录</td></tr>';
+  if (filtered.length > 500) html += `<tr><td colspan="8" class="muted" style="text-align:center;padding:10px;">仅显示前 500 条（共 ${filtered.length} 条）</td></tr>`;
+  U.html('changelog-tbody', html);
+}
+
+function getChangesForCampaign(campName, limit) {
+  return CHANGE_LOG.filter(e => e.campaign === campName).slice(0, limit || 5);
+}
+
+function getChangesForAdGroup(campName, agName, limit) {
+  return CHANGE_LOG.filter(e => e.campaign === campName && e.adGroup === agName).slice(0, limit || 3);
+}
+
+function renderChangesSummary(changes, label) {
+  if (!changes || changes.length === 0) return '';
+  let html = `<div class="changes-summary"><div class="changes-summary-title">📋 ${label}（${changes.length} 条）</div><div class="changes-summary-list">`;
+  changes.forEach(e => {
+    html += `<div class="changes-summary-row">
+      <span class="muted" style="font-size:10px;min-width:90px;">${formatDateTime(e.dateTime).slice(5)}</span>
+      ${typeBadge(e.resourceType)} ${opBadge(e.operation)}
+      <span style="font-size:11px;flex:1;">${formatChangeDetail(e)}</span>
+    </div>`;
+  });
+  html += '</div></div>';
+  return html;
+}
+
+// ═══════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════
 renderTrustGate();
@@ -2153,3 +2325,4 @@ renderDevices();
 renderLandingPageZone();
 renderDemographics();
 renderAdPolicy();
+renderChangeLog();

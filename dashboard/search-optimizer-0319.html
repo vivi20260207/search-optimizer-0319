@@ -48,6 +48,12 @@
         <span class="nav-icon">📱</span> 设备分析
       </li>
 
+      <li class="nav-group-label">操作管理</li>
+      <li class="nav-item" data-view="change-log">
+        <span class="nav-icon">📋</span> 变更日志
+        <span class="nav-badge" id="nav-change-count">0</span>
+      </li>
+
       <li class="nav-group-label">例行检查</li>
       <li class="nav-item" data-view="landing-page">
         <span class="nav-icon">🌐</span> 落地页专区
@@ -534,6 +540,57 @@
       </div>
     </section>
 
+    <!-- ═══ VIEW: 变更日志 ═══ -->
+    <section class="view-section" id="view-change-log">
+      <div class="page-header">
+        <div>
+          <h2>变更日志（ADW Change History）</h2>
+          <span class="page-header-meta">所有账户的操作变更记录，来自 Google Ads API</span>
+        </div>
+        <span class="data-tag data-tag-real">REAL DATA</span>
+      </div>
+      <div id="changelog-kpis" class="kpi-grid kpi-grid-5"></div>
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <h3 style="margin:0;">变更记录</h3>
+          <select id="cl-filter-camp" class="camp-select" style="max-width:220px;">
+            <option value="all">全部 Campaign</option>
+          </select>
+          <select id="cl-filter-type" class="camp-select" style="max-width:150px;">
+            <option value="all">全部实体</option>
+            <option value="Campaign">Campaign</option>
+            <option value="广告组">广告组</option>
+            <option value="关键词">关键词</option>
+            <option value="广告">广告</option>
+            <option value="预算">预算</option>
+            <option value="Campaign否定词">否定词</option>
+          </select>
+          <select id="cl-filter-op" class="camp-select" style="max-width:130px;">
+            <option value="all">全部操作</option>
+            <option value="新建">新建</option>
+            <option value="修改">修改</option>
+            <option value="移除">移除</option>
+          </select>
+          <input type="text" id="cl-search" class="cluster-search-input" placeholder="搜索 Campaign / 广告组 / 操作人..." style="max-width:250px;">
+        </div>
+        <div class="card-body-flush table-wrap" style="max-height:calc(100vh - 280px);overflow-y:auto;">
+          <table>
+            <thead><tr>
+              <th style="min-width:140px;">时间</th>
+              <th>操作人</th>
+              <th>来源</th>
+              <th>Campaign</th>
+              <th>广告组</th>
+              <th>实体类型</th>
+              <th>操作</th>
+              <th style="min-width:300px;">变更内容</th>
+            </tr></thead>
+            <tbody id="changelog-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
   </main>
 </div>
 
@@ -542,6 +599,7 @@
 <script src="js/adw_data_daily.js"></script>
 <script src="js/adw_data_st.js"></script>
 <script src="js/adw_data_assets.js"></script>
+<script src="js/adw_data_changelog.js"></script>
 <script src="js/utils-0319.js"></script>
 <script src="js/engine-0319.js"></script>
 <script src="js/search-optimizer-0319.js"></script>

@@ -887,6 +887,34 @@ td.num { font-variant-numeric: tabular-nums; }
 }
 
 /* ─── Responsive ─── */
+/* ─── Change Log ─── */
+.cl-field { font-weight: 600; color: var(--text); font-size: 11px; }
+.cl-old { color: var(--red); text-decoration: line-through; font-size: 11px; }
+.cl-new { color: var(--green); font-weight: 600; font-size: 11px; }
+
+.changes-summary {
+  background: linear-gradient(135deg, #f8f9ff 0%, #fffaf5 100%);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 6px;
+}
+.changes-summary-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text2);
+  margin-bottom: 6px;
+}
+.changes-summary-list { display: flex; flex-direction: column; gap: 4px; }
+.changes-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.changes-summary-row:last-child { border-bottom: none; }
+
 @media (max-width: 1200px) {
   .kpi-grid-5, .kpi-grid-6 { grid-template-columns: repeat(3, 1fr); }
   .main { padding: 16px; }

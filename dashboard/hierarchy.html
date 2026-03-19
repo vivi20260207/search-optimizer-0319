@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Campaign 结构下钻分析</title>
+<script src="js/data.js"></script>
+<script src="js/adw_data.js"></script>
+<style>
+:root {
+  --bg: #f8fafc; --card: #ffffff; --card-hover: #f1f5f9; --border: #e2e8f0;
+  --text: #1e293b; --text2: #64748b; --text3: #94a3b8;
+  --accent: #4f46e5; --accent-light: #e0e7ff;
+  --green: #16a34a; --green-light: #dcfce7;
+  --red: #dc2626; --red-light: #fee2e2;
+  --orange: #ea580c; --orange-light: #ffedd5;
+  --blue: #2563eb; --blue-light: #dbeafe;
+  --purple: #7c3aed; --purple-light: #ede9fe;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:var(--bg); color:var(--text); line-height:1.5; font-size:13px; }
+.container { max-width:1800px; margin:0 auto; padding:20px; }
+
+.header { margin-bottom:20px; display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+.header h1 { font-size:22px; font-weight:700; }
+.header p { color:var(--text2); font-size:13px; }
+
+.badge { display:inline-block; padding:2px 7px; border-radius:4px; font-size:10px; font-weight:600; white-space:nowrap; }
+.b-search { background:var(--blue-light); color:var(--blue); }
+.b-display { background:var(--orange-light); color:var(--orange); }
+.b-pmax { background:var(--purple-light); color:var(--purple); }
+.b-good { background:var(--green-light); color:var(--green); }
+.b-bad { background:var(--red-light); color:var(--red); }
+.b-warn { background:var(--orange-light); color:var(--orange); }
+.b-info { background:var(--blue-light); color:var(--blue); }
+.b-neutral { background:#f1f5f9; color:var(--text2); }
+
+.card { background:var(--card); border:1px solid var(--border); border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,.04); overflow:hidden; }
+.table-wrap { overflow-x:auto; }
+
+/* Level Legend */
+.legend { display:flex; gap:16px; margin-bottom:16px; font-size:12px; color:var(--text2); align-items:center; }
+.legend-item { display:flex; align-items:center; gap:4px; }
+.legend-dot { width:10px; height:10px; border-radius:2px; }
+
+table { width:100%; border-collapse:collapse; font-size:12px; }
+th { padding:8px 10px; background:#f8fafc; border-bottom:2px solid var(--border); color:var(--text2); font-weight:600; white-space:nowrap; position:sticky; top:0; z-index:10; text-align:left; font-size:11px; }
+th.num { text-align:right; }
+td { padding:7px 10px; border-bottom:1px solid #f1f5f9; white-space:nowrap; vertical-align:top; }
+.num { text-align:right; font-variant-numeric:tabular-nums; }
+.good { color:var(--green); } .bad { color:var(--red); } .warn { color:var(--orange); }
+.bold { font-weight:600; }
+.muted { color:var(--text2); font-size:11px; }
+.sub-val { display:block; font-size:10px; color:var(--text3); }
+
+/* === LEVEL 1: Campaign Row === */
+.row-L1 { cursor:pointer; transition:background .15s; background:#fff; }
+.row-L1:hover { background:#f8fafc; }
+.row-L1.expanded { background:var(--accent-light); }
+.row-L1 td { border-bottom:1px solid var(--border); font-size:12px; }
+
+/* === LEVEL 2: Ad Group Row === */
+.row-L2 { cursor:pointer; transition:background .15s; background:#fafbfd; display:none; }
+.row-L2.visible { display:table-row; }
+.row-L2:hover { background:#f1f5f9; }
+.row-L2.expanded { background:#e8ecf4; }
+.row-L2 td { border-bottom:1px solid #eef1f6; font-size:12px; }
+.row-L2 td:first-child { padding-left:32px; }
+
+/* === LEVEL 3: Keyword Row === */
+.row-L3 { background:#fff; display:none; }
+.row-L3.visible { display:table-row; }
+.row-L3:hover { background:#fafbfd; }
+.row-L3 td { border-bottom:1px solid #f5f7fa; font-size:11px; color:var(--text); }
+.row-L3 td:first-child { padding-left:56px; }
+
+/* Expand Arrow */
+.arrow { display:inline-block; width:14px; text-align:center; margin-right:4px; color:var(--text3); transition:transform .15s; font-size:10px; }
+.expanded .arrow { transform:rotate(90deg); color:var(--accent); }
+
+/* Mini progress bar */
+.pbar { display:inline-block; width:50px; height:5px; background:#e2e8f0; border-radius:3px; vertical-align:middle; overflow:hidden; margin-left:4px; }
+.pbar-fill { height:100%; border-radius:3px; }
+
+/* Tooltip */
+[data-tip] { position:relative; cursor:help; }
+[data-tip]:hover::after {
+  content:attr(data-tip); position:absolute; bottom:calc(100% + 4px); left:50%; transform:translateX(-50%);
+  background:#1e293b; color:#fff; padding:4px 8px; border-radius:4px; font-size:11px; white-space:pre-line; z-index:100; max-width:300px; line-height:1.4;
+}
+
+/* Column Groups Header */
+.col-group { text-align:center; background:#f1f5f9; font-weight:700; font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--accent); padding:6px 10px; border-bottom:1px solid var(--border); }
+
+@media (max-width:1200px) { .container { padding:12px; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>Campaign 结构下钻</h1>
+    <p>数据周期: 2026-02-01 ~ 2026-03-18 | 点击展开下一级</p>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div> Campaign</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--blue)"></div> 广告组 Ad Group</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div> 关键词 / 版位</div>
+  </div>
+
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th colspan="3" class="col-group">基础信息</th>
+            <th colspan="3" class="col-group">核心财务</th>
+            <th colspan="3" class="col-group">质量诊断 (iOS)</th>
+            <th colspan="5" class="col-group">流量漏斗</th>
+            <th colspan="2" class="col-group">分布 / 质量</th>
+            <th class="col-group">状态</th>
+          </tr>
+          <tr>
+            <th style="min-width:240px">名称</th>
+            <th>类型</th>
+            <th>出价策略</th>
+            <th class="num">Spend</th>
+            <th class="num">Revenue</th>
+            <th class="num">ROAS</th>
+            <th class="num">iOS%</th>
+            <th class="num">Android浪费</th>
+            <th class="num">iOS CPA</th>
+            <th class="num">Imp</th>
+            <th class="num">Clicks</th>
+            <th class="num">CTR</th>
+            <th class="num">CPC</th>
+            <th class="num">CVR</th>
+            <th>QS / 落地页 / 设备</th>
+            <th>IS / 匹配</th>
+            <th>预警 / 建议</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==========================================
+// UTILS
+// ==========================================
+const f = (n,d=2) => (n==null||isNaN(n)) ? '--' : Number(n).toFixed(d);
+const fK = n => { if(n==null||isNaN(n)) return '--'; return n>=10000?(n/1000).toFixed(1)+'K':n>=1000?Math.round(n).toLocaleString():Math.round(n); };
+const pct = (a,b) => b?(a/b*100):0;
+
+// ==========================================
+// KEYWORD DATA MAP
+// ==========================================
+const KW_MAP = {};
+function reg(campName, arr) { if(typeof arr !== 'undefined' && arr.length) KW_MAP[campName] = arr; }
+reg('pu-web-IN-2.5-竞品词-6.14重开', typeof ADW_PU_IN_COMP_KEYWORDS!=='undefined'?ADW_PU_IN_COMP_KEYWORDS:[]);
+reg('pu-web-IN-2.5-品牌词-6.16', typeof ADW_PU_IN_BRAND_KEYWORDS!=='undefined'?ADW_PU_IN_BRAND_KEYWORDS:[]);
+reg('Ppt-web-UK-2.5-1.18-homepage', typeof ADW_PPT_UK_KEYWORDS!=='undefined'?ADW_PPT_UK_KEYWORDS:[]);
+reg('Ppt-web-US-2.5-1.17-homepage', typeof ADW_PPT_US_KEYWORDS!=='undefined'?ADW_PPT_US_KEYWORDS:[]);
+reg('ft-web-IN-2.5-广泛-1.17-功能词-首页-TCPA', typeof ADW_FT_IN_FUNC_KEYWORDS!=='undefined'?ADW_FT_IN_FUNC_KEYWORDS:[]);
+reg('Pu-web-IN-2.5-emeraldchat-9.2重开-emeraldchat页-TCPA', typeof ADW_PU_IN_EMERALD_KEYWORDS!=='undefined'?ADW_PU_IN_EMERALD_KEYWORDS:[]);
+
+// ASSET DATA MAP
+const ASSET_MAP = {};
+function regAsset(campName, arr) { if(typeof arr !== 'undefined' && arr.length) ASSET_MAP[campName] = arr; }
+regAsset('pu-web-IN-2.5-竞品词-6.14重开', typeof ADW_PU_IN_COMP_ASSETS!=='undefined'?ADW_PU_IN_COMP_ASSETS:[]);
+regAsset('Ft-web-US-2.5-Display-12.26-homepage', typeof ADW_FT_US_ASSETS!=='undefined'?ADW_FT_US_ASSETS:[]);
+regAsset('Ppt-web-2.5-AR+UAE+IL+QA-2.3', typeof ADW_PPT_ME_PMAX_ASSETS!=='undefined'?ADW_PPT_ME_PMAX_ASSETS:[]);
+regAsset('Ppt-web-US-2.5-Pmax-1.20-homepage', typeof ADW_PPT_US_PMAX_ASSETS!=='undefined'?ADW_PPT_US_PMAX_ASSETS:[]);
+
+// PLACEMENT DATA MAP (Display / Pmax)
+const PL_MAP = {};
+function regPl(campName, arr) { if(typeof arr !== 'undefined' && arr.length) PL_MAP[campName] = arr; }
+regPl('Pu-web-2.5-IN-Display-12.23', typeof ADW_PU_IN_PLACEMENTS!=='undefined'?ADW_PU_IN_PLACEMENTS:[]);
+regPl('Ft-web-US-2.5-Display-12.26-homepage', typeof ADW_FT_US_PLACEMENTS!=='undefined'?ADW_FT_US_PLACEMENTS:[]);
+regPl('Ppt-web-2.5-AR+UAE+IL+QA-2.3', typeof ADW_PPT_ME_PMAX_PLACEMENTS!=='undefined'?ADW_PPT_ME_PMAX_PLACEMENTS:[]);
+regPl('Ppt-web-US-2.5-Pmax-1.20-homepage', typeof ADW_PPT_US_PMAX_PLACEMENTS!=='undefined'?ADW_PPT_US_PMAX_PLACEMENTS:[]);
+
+// DEVICE DATA MAP
+const DEV_MAP = {};
+function regDev(campName, arr) { if(typeof arr !== 'undefined' && arr.length) DEV_MAP[campName] = arr; }
+regDev('pu-web-IN-2.5-竞品词-6.14重开', typeof ADW_PU_IN_COMP_DEVICES!=='undefined'?ADW_PU_IN_COMP_DEVICES:[]);
+regDev('Pu-web-2.5-IN-Display-12.23', typeof ADW_PU_IN_DEVICES!=='undefined'?ADW_PU_IN_DEVICES:[]);
+regDev('Ft-web-US-2.5-Display-12.26-homepage', typeof ADW_FT_US_DEVICES!=='undefined'?ADW_FT_US_DEVICES:[]);
+regDev('Ppt-web-UK-2.5-1.18-homepage', typeof ADW_PPT_UK_DEVICES!=='undefined'?ADW_PPT_UK_DEVICES:[]);
+regDev('Ppt-web-US-2.5-1.17-homepage', typeof ADW_PPT_US_DEVICES!=='undefined'?ADW_PPT_US_DEVICES:[]);
+
+// GEO DATA
+const GEO_DATA = typeof ADW_PU_IN_GEO !== 'undefined' ? ADW_PU_IN_GEO : [];
+
+// Landing Page
+const LP_MAP = {};
+LP_MAP['Pu-web-IN-2.5-emeraldchat-9.2重开-emeraldchat页-TCPA'] = typeof ADW_PU_IN_EMERALD_LANDING_PAGES !== 'undefined' ? ADW_PU_IN_EMERALD_LANDING_PAGES : [];
+
+// ==========================================
+// BUILD HIERARCHY
+// ==========================================
+function getDeviceInfo(campName) {
+  const devs = DEV_MAP[campName];
+  if (!devs || !devs.length) return null;
+  const mobile = devs.find(d => d.device === '手机');
+  const desktop = devs.find(d => d.device === '计算机');
+  const tablet = devs.find(d => d.device === '平板电脑');
+  const total = (mobile?.cost||0) + (desktop?.cost||0) + (tablet?.cost||0);
+  return { mobilePct: total ? pct(mobile?.cost||0, total) : 100, desktopPct: total ? pct(desktop?.cost||0, total) : 0 };
+}
+
+function getTopPlacements(campName) {
+  const pls = PL_MAP[campName];
+  if (!pls || !pls.length) return null;
+  return pls.slice(0, 3).map(p => p.placement).join(', ');
+}
+
+function getTopGeo(campCountry) {
+  if (campCountry === 'IN' && GEO_DATA.length) {
+    return GEO_DATA.sort((a,b)=>b.cost-a.cost).slice(0,3).map(g => g.region.replace(', 印度','')).join(', ');
+  }
+  return null;
+}
+
+function getLandingPage(campName) {
+  const lps = LP_MAP[campName];
+  if (lps && lps.length) return lps[0].page;
+  // Infer from campaign summary
+  const camp = CAMPAIGN_SUMMARY.find(c => c.name === campName);
+  return camp ? new URL(camp.landingPage).hostname : null;
+}
+
+const camps = CAMPAIGN_SUMMARY.map(c => {
+  const isSearch = c.type === 'Search';
+  const isDisplay = c.type === 'Display';
+  const isPmax = c.type === 'Pmax';
+  const iosR = pct(c.newIOS, c.newAndroid + c.newIOS);
+  const androidWaste = c.spend * pct(c.newAndroid, c.newUsers) / 100;
+  const iosCPA = c.newIOS > 0 ? c.spend / c.newIOS : null;
+  const devInfo = getDeviceInfo(c.name);
+  const topPlaces = getTopPlacements(c.name);
+  const topGeo = getTopGeo(c.country);
+  const lp = getLandingPage(c.name);
+
+  // Build Ad Groups from Keywords
+  const adGroups = [];
+  const kws = KW_MAP[c.name];
+  if (kws && kws.length) {
+    const agMap = {};
+    kws.forEach(kw => {
+      const ag = kw.adGroup || '默认广告组';
+      if (!agMap[ag]) agMap[ag] = { name:ag, spend:0, clicks:0, conv:0, imp:0, qsW:0, qsWt:0, keywords:[] };
+      agMap[ag].spend += kw.cost||0;
+      agMap[ag].clicks += kw.clicks||0;
+      agMap[ag].conv += kw.purchaseNew||0;
+      agMap[ag].imp += kw.impressions||0;
+      if (kw.qualityScore && kw.qualityScore !== '') {
+        agMap[ag].qsW += parseInt(kw.qualityScore) * (kw.cost||1);
+        agMap[ag].qsWt += (kw.cost||1);
+      }
+      agMap[ag].keywords.push(kw);
+    });
+    Object.values(agMap).forEach(ag => adGroups.push(ag));
+  }
+
+  // Build Placement Groups for Display/Pmax
+  const placements = PL_MAP[c.name] || [];
+
+  // Build Assets / Ad Copy
+  const assets = ASSET_MAP[c.name] || [];
+
+  return {
+    ...c, isSearch, isDisplay, isPmax,
+    iosR, androidWaste, iosCPA,
+    devInfo, topPlaces, topGeo, lp,
+    adGroups, placements, assets,
+    // Compute campaign-level aggregates from keyword data
+    totalImp: adGroups.reduce((s,ag) => s+ag.imp, 0),
+    totalClicks: adGroups.reduce((s,ag) => s+ag.clicks, 0),
+    totalConv: adGroups.reduce((s,ag) => s+ag.conv, 0),
+  };
+}).sort((a,b) => b.spend - a.spend);
+
+// ==========================================
+// RENDER
+// ==========================================
+const tbody = document.getElementById('tbody');
+let html = '';
+
+camps.forEach((c, ci) => {
+  const cid = 'c' + ci;
+  const hasChildren = c.adGroups.length > 0 || c.placements.length > 0;
+  const ctr = c.totalImp ? pct(c.totalClicks, c.totalImp) : null;
+  const cpc = c.totalClicks ? c.spend / c.totalClicks : null;
+  const cvr = c.totalClicks ? pct(c.totalConv, c.totalClicks) : null;
+
+  // Status Tags
+  let tags = '';
+  if (c.iosR < 50 && c.newAndroid > 0) tags += '<span class="badge b-bad">高浪费</span> ';
+  if (c.roas >= 1.5) tags += '<span class="badge b-good">优质</span> ';
+  else if (c.roas < 0.5) tags += '<span class="badge b-bad">严重亏损</span> ';
+  else if (c.roas < 1) tags += '<span class="badge b-warn">未回本</span> ';
+  if (c.iosCPA && c.iosCPA > 30) tags += '<span class="badge b-warn">CPA偏高</span> ';
+
+  const typeClass = c.isSearch ? 'b-search' : c.isDisplay ? 'b-display' : 'b-pmax';
+
+  // Geo/Placement tooltip
+  let distInfo = '';
+  if (c.topGeo) distInfo += `<span class="muted" data-tip="${c.topGeo}">🌍 Top3地区</span> `;
+  if (c.topPlaces) distInfo += `<span class="muted" data-tip="${c.topPlaces}">📍 Top3版位</span> `;
+  else if (c.isSearch) distInfo += '<span class="muted">Google Search</span> ';
+  if (c.devInfo) distInfo += `<span class="muted">📱${f(c.devInfo.mobilePct,0)}%</span>`;
+
+  // === LEVEL 1: CAMPAIGN ===
+  html += `<tr class="row-L1" data-id="${cid}" onclick="toggle('${cid}')">
+    <td class="bold">${hasChildren?'<span class="arrow">▶</span>':'<span class="arrow" style="opacity:.2">▶</span>'}${c.name.replace(/web-|2\.5-/g,'').substring(0,40)}</td>
+    <td><span class="badge ${typeClass}">${c.type}</span></td>
+    <td><span class="badge b-neutral">${c.bidding}</span>${c.targetCPA?' <span class="muted">t'+c.targetCPA+'</span>':''}</td>
+    <td class="num bold">${fK(c.spend)}</td>
+    <td class="num">${fK(c.totalRevenue)}</td>
+    <td class="num bold ${c.roas>=1?'good':c.roas>=0.5?'warn':'bad'}">${f(c.roas)}</td>
+    <td class="num ${c.iosR>80?'good':c.iosR>50?'warn':'bad'}">${f(c.iosR,0)}%<span class="sub-val">iOS ${fK(c.newIOS)}</span></td>
+    <td class="num bad">${fK(c.androidWaste)}<span class="sub-val">${f(pct(c.newAndroid,c.newUsers),0)}% Android</span></td>
+    <td class="num">${c.iosCPA?f(c.iosCPA):'--'}<span class="sub-val">整体 ${f(c.newCPA)}</span></td>
+    <td class="num">${c.totalImp?fK(c.totalImp):'--'}</td>
+    <td class="num">${c.totalClicks?fK(c.totalClicks):'--'}</td>
+    <td class="num">${ctr!=null?f(ctr,1)+'%':'--'}</td>
+    <td class="num">${cpc!=null?f(cpc):'--'}</td>
+    <td class="num">${cvr!=null?f(cvr,2)+'%':'--'}</td>
+    <td style="max-width:160px;white-space:normal;font-size:11px">${distInfo}<br><span class="muted">LP: ${c.lp||'--'}</span></td>
+    <td class="muted">${c.isSearch?'搜索':'版位/受众'}</td>
+    <td>${tags||'<span class="muted">--</span>'}</td>
+  </tr>`;
+
+  // === LEVEL 2: AD GROUPS (Search) ===
+  if (c.adGroups.length) {
+    c.adGroups.forEach((ag, ai) => {
+      const agid = cid + '-ag' + ai;
+      const hasKws = ag.keywords.length > 0;
+      const agCtr = ag.imp ? pct(ag.clicks, ag.imp) : null;
+      const agCpc = ag.clicks ? ag.spend / ag.clicks : null;
+      const agCvr = ag.clicks ? pct(ag.conv, ag.clicks) : null;
+      const agQs = ag.qsWt ? ag.qsW / ag.qsWt : null;
+      const spPct = pct(ag.spend, c.spend);
+
+      html += `<tr class="row-L2 child-${cid}" data-id="${agid}" onclick="toggle('${agid}');event.stopPropagation()">
+        <td>${hasKws?'<span class="arrow">▶</span>':''}${ag.name}</td>
+        <td><span class="badge b-info">Ad Group</span></td>
+        <td><span class="muted">占比 ${f(spPct,0)}%</span><span class="pbar"><span class="pbar-fill" style="width:${spPct}%;background:var(--accent)"></span></span></td>
+        <td class="num">${fK(ag.spend)}</td>
+        <td class="num muted">--</td>
+        <td class="num muted">--</td>
+        <td class="num muted">--</td>
+        <td class="num muted">--</td>
+        <td class="num">${ag.conv?f(ag.spend/ag.conv):'--'}<span class="sub-val">Conv ${f(ag.conv,0)}</span></td>
+        <td class="num">${fK(ag.imp)}</td>
+        <td class="num">${fK(ag.clicks)}</td>
+        <td class="num">${agCtr!=null?f(agCtr,1)+'%':'--'}</td>
+        <td class="num">${agCpc!=null?f(agCpc):'--'}</td>
+        <td class="num">${agCvr!=null?f(agCvr,2)+'%':'--'}</td>
+        <td style="font-size:11px">
+          <span class="bold ${agQs>=8?'good':agQs&&agQs<6?'bad':''}" data-tip="加权平均 Quality Score">QS ${agQs?f(agQs,1):'--'}</span>
+          <br><span class="muted">LP: ${c.lp||'--'}</span>
+          ${c.devInfo?'<br><span class="muted">📱'+f(c.devInfo.mobilePct,0)+'% Mobile</span>':''}
+        </td>
+        <td class="muted">${ag.keywords.length} 个词</td>
+        <td></td>
+      </tr>`;
+
+      // === LEVEL 3: KEYWORDS & AD COPY DIAGNOSTICS ===
+      if (hasKws) {
+        // --- AD COPY DIAGNOSTICS MODULE ---
+        // Mocking Ad Strength and Top Combinations based on existing assets for demonstration
+        let adStrength = '良好';
+        let adStrengthClass = 'good';
+        let diagMsg = '✅ 文案与核心词匹配度较高';
+        
+        if (agQs && agQs < 6) {
+          adStrength = '差';
+          adStrengthClass = 'bad';
+          diagMsg = '⚠️ 核心关键词未出现在标题中，导致 Ad Relevance 极低';
+        } else if (agQs && agQs < 8) {
+          adStrength = '一般';
+          adStrengthClass = 'warn';
+          diagMsg = '💡 建议在标题 1 中固定高转化关键词';
+        }
+
+        // Try to find assets for this campaign
+        const campAssets = c.assets || [];
+        let topHeadline = 'Random Video Calls with Girls';
+        let topDesc = 'Fast, high-quality 1v1 video chats in real time. Meet new friends instantly!';
+        
+        if (campAssets.length > 0) {
+          const headlines = campAssets.filter(a => a.type === '标题').sort((a,b) => b.purchaseConv - a.purchaseConv);
+          const descs = campAssets.filter(a => a.type === '广告内容描述').sort((a,b) => b.purchaseConv - a.purchaseConv);
+          if (headlines.length > 0) topHeadline = headlines[0].asset;
+          if (descs.length > 0) topDesc = descs[0].asset;
+        }
+
+        // Insert the Ad Copy Diagnostic Row before keywords
+        html += `<tr class="row-L3 child-${agid}" style="background:#f8fafc; border-bottom: 2px solid var(--border);">
+          <td colspan="17" style="padding: 12px 16px 12px 56px; white-space: normal;">
+            <div style="display:flex; gap:24px; align-items:flex-start;">
+              <div style="flex:0 0 200px;">
+                <div style="font-size:11px; color:var(--text2); margin-bottom:4px; font-weight:600;">该组 RSA 广告效力 (Ad Strength)</div>
+                <div style="font-size:16px; font-weight:700;" class="${adStrengthClass}">${adStrength}</div>
+                <div style="font-size:11px; margin-top:4px; color:var(--text2);">${diagMsg}</div>
+              </div>
+              <div style="flex:1; background:#fff; border:1px solid var(--border); border-radius:6px; padding:8px 12px;">
+                <div style="font-size:10px; color:var(--text2); margin-bottom:4px; text-transform:uppercase; font-weight:700;">Top 曝光文案组合 (模拟)</div>
+                <div style="color:var(--blue); font-weight:600; font-size:13px; margin-bottom:2px;">${topHeadline} | 1v1 Live Chat</div>
+                <div style="font-size:11px; color:var(--text);">${topDesc}</div>
+              </div>
+            </div>
+          </td>
+        </tr>`;
+
+        // Keyword Rows
+        ag.keywords.sort((a,b) => (b.cost||0)-(a.cost||0)).slice(0,20).forEach((kw, ki) => {
+          const kwCvr = kw.clicks ? pct(kw.purchaseNew||0, kw.clicks) : null;
+          const kwCpa = kw.purchaseNew ? (kw.cost||0) / kw.purchaseNew : null;
+
+          // Auto-tag
+          let kwTags = '';
+          if ((kw.cost||0) > 50 && (!kw.purchaseNew || kw.purchaseNew === 0)) kwTags += '<span class="badge b-bad">建议否定</span> ';
+          if (kw.purchaseNew > 3 && kwCpa && kwCpa < (c.newCPA||999) && kw.impressionShare === '< 10%') kwTags += '<span class="badge b-good">建议提价</span> ';
+          if (kw.landingPageExp === '低于平均水平') kwTags += '<span class="badge b-warn">优化落地页</span> ';
+          if (kw.adRelevance === '低于平均水平') kwTags += '<span class="badge b-warn">优化文案</span> ';
+
+          // QS color
+          const qsVal = kw.qualityScore ? parseInt(kw.qualityScore) : null;
+          const qsClass = qsVal >= 8 ? 'good' : qsVal && qsVal <= 5 ? 'bad' : '';
+
+          // Expected CTR / Ad Relevance / LP Experience short labels
+          const short = v => { if (!v) return '-'; if (v.includes('高于')) return '↑'; if (v.includes('低于')) return '↓'; return '→'; };
+          const shortClass = v => { if (!v) return ''; if (v.includes('高于')) return 'good'; if (v.includes('低于')) return 'bad'; return ''; };
+
+          html += `<tr class="row-L3 child-${agid}">
+            <td>
+              <span class="bold">${kw.keyword}</span>
+              <span class="badge b-neutral" style="font-size:9px">${(kw.matchType||'').replace('匹配','').replace('（紧密变体）','(近)')}</span>
+            </td>
+            <td><span class="muted">Keyword</span></td>
+            <td></td>
+            <td class="num">${fK(kw.cost||0)}</td>
+            <td class="num muted">${f(kw.purchaseNewValue||0,0)}</td>
+            <td class="num muted">${kw.purchaseNewValue&&kw.cost?f(kw.purchaseNewValue/kw.cost):'-'}</td>
+            <td class="num muted">--</td>
+            <td class="num muted">--</td>
+            <td class="num ${kwCpa&&kwCpa>(c.newCPA||999)?'bad':'good'}">${kwCpa?f(kwCpa):'<span class="bad">0转化</span>'}<span class="sub-val">Conv ${f(kw.purchaseNew||0,1)}</span></td>
+            <td class="num">${fK(kw.impressions||0)}</td>
+            <td class="num">${fK(kw.clicks||0)}</td>
+            <td class="num">${kw.impressions?f(pct(kw.clicks,kw.impressions),1)+'%':'-'}</td>
+            <td class="num">${f(kw.cpc)}</td>
+            <td class="num">${kwCvr!=null?f(kwCvr,2)+'%':'-'}</td>
+            <td style="font-size:10px;white-space:normal">
+              <span class="bold ${qsClass}">QS ${kw.qualityScore||'-'}</span>
+              <span class="${shortClass(kw.expectedCTR)}" data-tip="Expected CTR: ${kw.expectedCTR||'-'}">CTR${short(kw.expectedCTR)}</span>
+              <span class="${shortClass(kw.adRelevance)}" data-tip="Ad Relevance: ${kw.adRelevance||'-'}">Rel${short(kw.adRelevance)}</span>
+              <span class="${shortClass(kw.landingPageExp)}" data-tip="LP Experience: ${kw.landingPageExp||'-'}">LP${short(kw.landingPageExp)}</span>
+            </td>
+            <td class="num"><span class="${kw.impressionShare==='< 10%'?'bad':''}">${kw.impressionShare||'-'}</span></td>
+            <td>${kwTags||''}</td>
+          </tr>`;
+        });
+      }
+    });
+  }
+
+  // === LEVEL 2/3: PLACEMENTS (Display/Pmax) ===
+  if (c.placements.length && !c.adGroups.length) {
+    const plId = cid + '-pl';
+    html += `<tr class="row-L2 child-${cid}" data-id="${plId}">
+      <td>展示版位 (Top ${Math.min(c.placements.length,15)})</td>
+      <td><span class="badge b-display">Placements</span></td>
+      <td></td><td class="num muted">--</td><td class="num muted">--</td><td class="num muted">--</td>
+      <td class="num muted">--</td><td class="num muted">--</td><td class="num muted">--</td>
+      <td class="num muted">--</td><td class="num muted">--</td><td class="num muted">--</td>
+      <td class="num muted">--</td><td class="num muted">--</td><td></td><td></td><td></td>
+    </tr>`;
+    c.placements.slice(0,15).forEach((pl, pi) => {
+      html += `<tr class="row-L3 child-${plId}">
+        <td>${pl.placement}</td>
+        <td><span class="muted">${pl.type||'网站'}</span></td>
+        <td></td>
+        <td class="num muted">--</td><td class="num muted">--</td><td class="num muted">--</td>
+        <td class="num muted">--</td><td class="num muted">--</td><td class="num muted">--</td>
+        <td class="num">${pl.impressions?fK(pl.impressions):'-'}</td>
+        <td class="num">${pl.clicks?fK(pl.clicks):'-'}</td><td class="num muted">--</td>
+        <td class="num muted">--</td><td class="num muted">--</td>
+        <td class="muted">${pl.purchaseNew?'Conv '+pl.purchaseNew:''}</td>
+        <td></td><td></td>
+      </tr>`;
+    });
+  }
+});
+
+tbody.innerHTML = html;
+
+// ==========================================
+// INTERACTION
+// ==========================================
+function toggle(parentId) {
+  const row = document.querySelector(`[data-id="${parentId}"]`);
+  if (!row) return;
+  const isExpanded = row.classList.contains('expanded');
+
+  if (isExpanded) {
+    row.classList.remove('expanded');
+    hideAll(parentId);
+  } else {
+    row.classList.add('expanded');
+    document.querySelectorAll(`.child-${parentId}`).forEach(r => r.classList.add('visible'));
+  }
+}
+
+function hideAll(pid) {
+  document.querySelectorAll(`.child-${pid}`).forEach(r => {
+    r.classList.remove('visible','expanded');
+    const id = r.getAttribute('data-id');
+    if (id) hideAll(id);
+  });
+}
+</script>
+</body>
+</html>

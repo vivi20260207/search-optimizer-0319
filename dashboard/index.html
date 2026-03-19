@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web 投放数据后台</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h2>投放数据后台</h2>
+      <span class="sidebar-sub">Web Campaign Analytics</span>
+    </div>
+    <ul class="nav-list">
+      <li class="nav-item active" data-view="overview">
+        <span class="nav-icon">📊</span> 总览 Dashboard
+      </li>
+      <li class="nav-item" data-view="daily-trend">
+        <span class="nav-icon">📈</span> Campaign 日趋势
+      </li>
+      <li class="nav-item" data-view="placements">
+        <span class="nav-icon">📍</span> 展示位置分析
+      </li>
+      <li class="nav-item" data-view="geo-audience">
+        <span class="nav-icon">🌍</span> 地理/受众/素材
+      </li>
+      <li class="nav-item" data-view="search-terms">
+        <span class="nav-icon">🔍</span> 搜索词分析
+      </li>
+      <li class="nav-item" data-view="devices">
+        <span class="nav-icon">📱</span> 设备分析
+      </li>
+      <li class="nav-item" data-view="schedule">
+        <span class="nav-icon">🕐</span> 投放时段分析
+      </li>
+      <li class="nav-item" data-view="landing-pages">
+        <span class="nav-icon">🎯</span> 落地页管理
+      </li>
+      <li class="nav-item" data-view="keyword-expansion">
+        <span class="nav-icon">🔑</span> 关键词拓展
+      </li>
+      <li class="nav-item" data-view="alerts">
+        <span class="nav-icon">🚨</span> 优化建议中心
+      </li>
+    </ul>
+    <div class="sidebar-footer">
+      <div class="data-info">
+        <span>数据周期: 2026-02-01 ~ 2026-03-18</span>
+        <span class="update-time">更新: 2026-03-18</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- ===== VIEW 1: Overview ===== -->
+    <section class="view active" id="view-overview">
+      <div class="view-header">
+        <h1>总览 Dashboard</h1>
+        <div class="view-filters">
+          <select id="filter-product">
+            <option value="all">全部产品</option>
+            <option value="Ft">Ft (Fachat)</option>
+            <option value="Ppt">Ppt (PinkPinkChat)</option>
+            <option value="Pu">Pu (Parau)</option>
+          </select>
+          <select id="filter-country">
+            <option value="all">全部地区</option>
+            <option value="US">美国</option>
+            <option value="UK">英国</option>
+            <option value="IN">印度</option>
+            <option value="ME">中东</option>
+          </select>
+          <select id="filter-type">
+            <option value="all">全部类型</option>
+            <option value="Search">搜索广告</option>
+            <option value="Display">展示广告</option>
+            <option value="Pmax">Pmax</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="kpi-cards" id="kpi-cards"></div>
+
+      <div class="card table-card">
+        <div class="card-header">
+          <h3>Campaign 明细（按 ROAS 排序）</h3>
+          <div class="data-source-tag real">BI 真实数据</div>
+        </div>
+        <div class="table-wrapper">
+          <table id="campaign-table">
+            <thead>
+              <tr>
+                <th class="sticky-col">Campaign</th>
+                <th>产品</th>
+                <th>地区</th>
+                <th>类型</th>
+                <th data-sort="spend">花费 ↕</th>
+                <th data-sort="totalRevenue">总收入 ↕</th>
+                <th data-sort="roas">ROAS ↕</th>
+                <th data-sort="newUsers">新增用户 ↕</th>
+                <th data-sort="newPayUsers">新付费 ↕</th>
+                <th data-sort="newCPA">新CPA ↕</th>
+                <th data-sort="arppu">ARPPU ↕</th>
+                <th>安卓付费率</th>
+                <th>iOS付费率</th>
+              </tr>
+            </thead>
+            <tbody id="campaign-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="charts-row">
+        <div class="card chart-card">
+          <div class="card-header">
+            <h3>各产品花费 vs 收入</h3>
+            <div class="data-source-tag real">BI 真实数据</div>
+          </div>
+          <canvas id="chart-product-spend"></canvas>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header">
+            <h3>Campaign ROAS 分布</h3>
+            <div class="data-source-tag real">BI 真实数据</div>
+          </div>
+          <canvas id="chart-roas-bar"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== VIEW 2: Daily Trend ===== -->
+    <section class="view" id="view-daily-trend">
+      <div class="view-header">
+        <h1>Campaign 日趋势</h1>
+        <div class="view-filters">
+          <select id="daily-campaign-select"></select>
+        </div>
+      </div>
+      <div class="data-source-tag real" style="margin-bottom:16px;">Ft-US-Display 为 BI 真实数据，其他 Campaign 待导入</div>
+
+      <div class="kpi-cards" id="daily-kpis"></div>
+
+      <div class="charts-row">
+        <div class="card chart-card full-width">
+          <div class="card-header"><h3>日花费 vs 日收入</h3></div>
+          <canvas id="chart-daily-spend-rev"></canvas>
+        </div>
+      </div>
+      <div class="charts-row">
+        <div class="card chart-card">
+          <div class="card-header"><h3>日 ROAS 趋势</h3></div>
+          <canvas id="chart-daily-roas"></canvas>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header"><h3>日新增用户</h3></div>
+          <canvas id="chart-daily-users"></canvas>
+        </div>
+      </div>
+      <div class="charts-row">
+        <div class="card chart-card">
+          <div class="card-header"><h3>新用户付费人数 & ARPPU</h3></div>
+          <canvas id="chart-daily-pay"></canvas>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header"><h3>新 vs 老用户收入占比</h3></div>
+          <canvas id="chart-daily-rev-split"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== VIEW 3: Placements ===== -->
+    <section class="view" id="view-placements">
+      <div class="view-header">
+        <h1>展示位置分析</h1>
+        <div class="view-filters">
+          <select id="placement-campaign-select">
+            <option value="ft-us">Ft-web-US-Display (美国)</option>
+            <option value="pu-in">Pu-web-IN-Display (印度)</option>
+            <option value="ppt-me-pmax">Ppt-ME-PMax (AR+UAE+IL+QA)</option>
+            <option value="ppt-us-pmax">Ppt-US-PMax-1.20</option>
+          </select>
+        </div>
+      </div>
+      <div class="data-source-tag real" style="margin-bottom:16px;">ADW 真实数据 - 系统推荐展示位置报告</div>
+      <div id="placement-ai"></div>
+      <div class="card">
+        <div class="card-header">
+          <h3 id="placement-table-title">展示位置 → 新付费用户贡献</h3>
+          <div class="data-source-tag real">ADW 真实数据</div>
+        </div>
+        <div class="placement-summary" id="placement-summary"></div>
+        <div class="table-wrapper">
+          <table id="placement-table">
+            <thead>
+              <tr>
+                <th>展示位置</th>
+                <th>类型</th>
+                <th>新付费转化</th>
+                <th>总付费转化</th>
+                <th>首次访问</th>
+                <th>页面浏览</th>
+                <th>15s视频通话</th>
+                <th>转化质量</th>
+              </tr>
+            </thead>
+            <tbody id="placement-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="charts-row">
+        <div class="card chart-card">
+          <div class="card-header"><h3>TOP 展示位置 - 新付费用户数</h3></div>
+          <canvas id="chart-placement-cost"></canvas>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header"><h3>位置类型分布</h3></div>
+          <canvas id="chart-placement-bubble"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== VIEW 3.5: Geo + Audience + Assets ===== -->
+    <section class="view" id="view-geo-audience">
+      <div class="view-header">
+        <h1>地理 / 受众 / 素材分析</h1>
+        <div class="data-source-tag real">ADW 真实数据</div>
+      </div>
+
+      <div id="geo-ai"></div>
+      <div class="card">
+        <div class="card-header"><h3>Pu-IN-Display 印度各邦效果</h3></div>
+        <div class="placement-summary" id="geo-summary"></div>
+        <div class="table-wrapper">
+          <table id="geo-table">
+            <thead><tr>
+              <th>地区</th><th>点击</th><th>展示</th><th>CTR</th>
+              <th>CPC(HKD)</th><th>花费(HKD)</th><th>转化率</th>
+              <th>转化</th><th>CPA(HKD)</th><th>效率</th><th>操作建议</th>
+            </tr></thead>
+            <tbody id="geo-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="charts-row">
+        <div class="card chart-card">
+          <div class="card-header"><h3>Ft-US-Display 受众群体效果</h3></div>
+          <canvas id="chart-audience"></canvas>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header"><h3>Ft-US-Display 素材资源 TOP 15 (付费转化)</h3></div>
+          <canvas id="chart-assets"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>Ft-US-Display 素材资源明细</h3></div>
+        <div class="table-wrapper">
+          <table id="asset-table">
+            <thead><tr>
+              <th>素材</th><th>类型</th><th>状态</th>
+              <th>付费转化</th><th>付费金额(HKD)</th>
+              <th>所有转化</th><th>所有转化价值</th>
+            </tr></thead>
+            <tbody id="asset-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <hr style="border-color:rgba(0,0,0,0.08);margin:32px 0;">
+      <h2 style="color:var(--accent);margin-bottom:16px;">Ppt-ME PMax (AR+UAE+IL+QA)</h2>
+
+      <div class="card">
+        <div class="card-header"><h3>PMax 地理位置（按国家转化）</h3></div>
+        <div class="table-wrapper">
+          <table id="pmax-geo-table">
+            <thead><tr>
+              <th>国家</th><th>新购买转化</th><th>新购买金额(HKD)</th>
+              <th>总购买转化</th><th>总购买金额(HKD)</th><th>First Visit</th>
+            </tr></thead>
+            <tbody id="pmax-geo-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="charts-row">
+        <div class="card chart-card">
+          <div class="card-header"><h3>PMax 素材资源 TOP 15 (转化价值)</h3></div>
+          <canvas id="chart-pmax-assets"></canvas>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header"><h3>PMax 素材类型转化分布</h3></div>
+          <canvas id="chart-pmax-asset-types"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>PMax ME 素材资源明细</h3></div>
+        <div class="table-wrapper">
+          <table id="pmax-asset-table">
+            <thead><tr>
+              <th>素材</th><th>类型</th><th>添加者</th>
+              <th>展示</th><th>点击</th><th>CTR</th>
+              <th>花费(HKD)</th><th>转化</th><th>转化价值(HKD)</th><th>CPA</th>
+            </tr></thead>
+            <tbody id="pmax-asset-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <hr style="border-color:rgba(0,0,0,0.08);margin:32px 0;">
+      <h2 style="color:var(--accent);margin-bottom:16px;">Ppt-US PMax-1.20</h2>
+
+      <div class="charts-row">
+        <div class="card chart-card">
+          <div class="card-header"><h3>US PMax 素材 TOP 15 (转化价值)</h3></div>
+          <canvas id="chart-pmax-us-assets"></canvas>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header"><h3>US PMax 素材类型分布</h3></div>
+          <canvas id="chart-pmax-us-asset-types"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>PMax US 素材资源明细</h3></div>
+        <div class="table-wrapper">
+          <table id="pmax-us-asset-table">
+            <thead><tr>
+              <th>素材</th><th>类型</th><th>添加者</th>
+              <th>展示</th><th>点击</th><th>CTR</th>
+              <th>花费(HKD)</th><th>转化</th><th>转化价值(HKD)</th><th>CPA</th>
+            </tr></thead>
+            <tbody id="pmax-us-asset-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== VIEW 4: Search Terms ===== -->
+    <section class="view" id="view-search-terms">
+      <div class="view-header">
+        <h1>搜索词 & 关键词分析</h1>
+        <div class="view-filters">
+          <select id="search-campaign-select">
+            <option value="pu-in-comp">Pu-IN-竞品词-6.14</option>
+            <option value="pu-in-brand">Pu-IN-品牌词-6.16</option>
+            <option value="pu-in-emerald">Pu-IN-emeraldchat-9.2</option>
+            <option value="ft-in-func">Ft-IN-功能词-TCPA</option>
+            <option value="ppt-uk">Ppt-UK-1.18-homepage</option>
+            <option value="ppt-us">Ppt-US-1.17-homepage</option>
+            <option value="ppt-us-pmax">Ppt-US-PMax-1.20</option>
+          </select>
+        </div>
+      </div>
+      <div class="data-source-tag real" style="margin-bottom:16px;">ADW 真实数据</div>
+
+      <div id="keyword-ai"></div>
+      <div class="card">
+        <div class="card-header">
+          <h3>关键词效果（含质量得分）</h3>
+          <div class="data-source-tag real">ADW 真实数据</div>
+        </div>
+        <div class="search-summary" id="keyword-summary"></div>
+        <div class="table-wrapper">
+          <table id="keyword-table">
+            <thead><tr>
+              <th>关键词</th><th>匹配类型</th><th>广告组</th><th>状态</th>
+              <th>新付费转化</th><th>付费金额(HKD)</th>
+              <th>质量得分</th><th>预期CTR</th><th>着陆页体验</th><th>广告相关性</th>
+            </tr></thead>
+            <tbody id="keyword-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="search-term-ai"></div>
+      <div class="card">
+        <div class="card-header">
+          <h3>搜索词 TOP（按新付费转化排序）</h3>
+          <div class="data-source-tag real">ADW 真实数据</div>
+        </div>
+        <div class="search-summary" id="search-summary"></div>
+        <div class="table-wrapper">
+          <table id="search-table">
+            <thead><tr>
+              <th>搜索词</th><th>匹配类型</th><th>广告组</th>
+              <th>新付费转化</th><th>付费金额(HKD)</th>
+              <th>首次访问</th><th>页面浏览</th><th>视频通话</th>
+              <th>转化质量</th><th>操作建议</th>
+            </tr></thead>
+            <tbody id="search-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="landing-page-section" style="display:none;">
+        <div class="card">
+          <div class="card-header">
+            <h3>着陆页效果分析</h3>
+            <div class="data-source-tag real">ADW 真实数据</div>
+          </div>
+          <div class="table-wrapper">
+            <table id="landing-page-table">
+              <thead><tr>
+                <th>着陆页</th><th>点击</th><th>展示</th><th>CTR</th>
+                <th>CPC(HKD)</th><th>花费(HKD)</th><th>转化</th>
+                <th>转化价值</th><th>转化率</th><th>CPA</th><th>效率</th>
+              </tr></thead>
+              <tbody id="landing-page-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="charts-row">
+        <div class="card chart-card">
+          <div class="card-header"><h3>搜索词 TOP 15 - 新付费转化</h3></div>
+          <canvas id="chart-search-cost"></canvas>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header"><h3>关键词质量得分分布</h3></div>
+          <canvas id="chart-search-conv"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== VIEW 5: Devices ===== -->
+    <section class="view" id="view-devices">
+      <div class="view-header">
+        <h1>设备分析</h1>
+        <div class="data-source-tag real">ADW 真实数据</div>
+      </div>
+      <div id="device-ai"></div>
+      <div class="charts-row">
+        <div class="card chart-card">
+          <div class="card-header"><h3>各 Campaign 设备花费分布</h3></div>
+          <canvas id="chart-device-spend"></canvas>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header"><h3>设备 ROAS 对比</h3></div>
+          <canvas id="chart-device-roas"></canvas>
+        </div>
+      </div>
+      <div class="card table-card">
+        <div class="card-header">
+          <h3>设备明细</h3>
+          <div class="data-source-tag mock-tag">MOCK</div>
+        </div>
+        <div class="table-wrapper">
+          <table id="device-table">
+            <thead>
+              <tr>
+                <th>Campaign</th>
+                <th>设备</th>
+                <th>出价调整</th>
+                <th>点击</th>
+                <th>展示</th>
+                <th>CTR</th>
+                <th>CPC(HKD)</th>
+                <th>花费(HKD)</th>
+                <th>转化率</th>
+                <th>转化</th>
+                <th>操作建议</th>
+              </tr>
+            </thead>
+            <tbody id="device-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== VIEW 7: Schedule Heatmap ===== -->
+    <section class="view" id="view-schedule">
+      <div class="view-header">
+        <h1>投放时段分析</h1>
+        <div class="data-source-tag real">ADW 真实数据 - Ppt-UK（印度时区）</div>
+      </div>
+      <div class="kpi-cards" id="schedule-kpis"></div>
+      <div id="schedule-ai"></div>
+      <div class="card">
+        <div class="card-header"><h3>转化热力图（周几 × 时段）</h3></div>
+        <div id="heatmap-container" style="overflow-x:auto;"></div>
+      </div>
+      <div class="charts-row">
+        <div class="card chart-card">
+          <div class="card-header"><h3>各时段转化分布</h3></div>
+          <canvas id="chart-schedule-hour"></canvas>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header"><h3>各星期转化 & CPA</h3></div>
+          <canvas id="chart-schedule-day"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== VIEW 8: Landing Page Analysis (三视图) ===== -->
+    <section class="view" id="view-landing-pages">
+      <div class="view-header">
+        <h1>落地页管理 & 版本分析</h1>
+        <div class="data-source-tag mock-tag">MOCK 数据</div>
+      </div>
+
+      <div class="lp-tabs">
+        <button class="lp-tab active" data-lp-view="global">全局状态</button>
+        <button class="lp-tab" data-lp-view="detail">版本详情</button>
+        <button class="lp-tab" data-lp-view="matrix">词-页匹配矩阵</button>
+        <button class="lp-tab" data-lp-view="abtest">A/B 测试</button>
+      </div>
+
+      <!-- ====== Sub-View A: 落地页全局状态 ====== -->
+      <div class="lp-subview active" id="lp-view-global">
+        <div class="view-filters" style="margin-bottom:16px;">
+          <select id="lp-global-product">
+            <option value="all">全部产品</option>
+            <option value="Pu">Pu (Parau)</option>
+            <option value="Ppt">Ppt (PinkPinkChat)</option>
+            <option value="Ft">Ft (Fachat)</option>
+          </select>
+          <select id="lp-global-status">
+            <option value="all">全部状态</option>
+            <option value="active">已上线</option>
+            <option value="planned">待建设</option>
+          </select>
+        </div>
+        <div class="kpi-cards" id="lp-global-kpis"></div>
+        <div id="lp-global-ai"></div>
+        <div class="lp-page-grid" id="lp-page-grid"></div>
+      </div>
+
+      <!-- ====== Sub-View B: 版本详情 ====== -->
+      <div class="lp-subview" id="lp-view-detail">
+        <div class="lp-detail-empty" id="lp-detail-empty">
+          <div class="lp-detail-empty-icon">📄</div>
+          <h3>选择一个落地页查看版本详情</h3>
+          <p>请从「全局状态」视图中点击某个落地页卡片</p>
+        </div>
+        <div id="lp-detail-content" style="display:none;">
+          <button class="lp-back-btn" id="lp-back-btn">&larr; 返回全局状态</button>
+          <div class="lp-detail-header" id="lp-detail-header"></div>
+          <div class="kpi-cards" id="lp-detail-kpis" style="margin-bottom:20px;"></div>
+
+          <div class="card" style="margin-bottom:20px;">
+            <div class="card-header"><h3>版本历史</h3></div>
+            <div class="lp-version-timeline" id="lp-version-timeline"></div>
+          </div>
+
+          <div class="card" id="lp-compare-card" style="display:none;">
+            <div class="card-header">
+              <h3>版本对比</h3>
+              <div class="view-filters">
+                <select id="lp-compare-a"></select>
+                <span style="color:var(--text-muted);padding:0 8px;">vs</span>
+                <select id="lp-compare-b"></select>
+              </div>
+            </div>
+            <div id="lp-compare-body"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h3>关联关键词</h3></div>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead><tr>
+                  <th>关键词</th><th>词组</th><th>匹配度</th>
+                  <th>跳出率</th><th>QS</th><th>付费率</th><th>状态</th>
+                </tr></thead>
+                <tbody id="lp-detail-keywords"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ====== Sub-View C: 词-页匹配矩阵 ====== -->
+      <div class="lp-subview" id="lp-view-matrix">
+        <div class="view-filters" style="margin-bottom:16px;">
+          <select id="lp-matrix-product">
+            <option value="all">全部产品</option>
+            <option value="Pu">Pu (Parau)</option>
+            <option value="Ppt">Ppt (PinkPinkChat)</option>
+            <option value="Ft">Ft (Fachat)</option>
+          </select>
+        </div>
+        <div class="kpi-cards" id="lp-matrix-kpis"></div>
+        <div id="lp-matrix-ai"></div>
+
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-header"><h3>关键词 → 落地页 分配矩阵</h3></div>
+          <div class="table-wrapper" id="lp-matrix-table-wrap"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>关键词匹配明细</h3></div>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead><tr>
+                <th>关键词</th><th>词组</th><th>产品</th>
+                <th>当前页</th><th>建议页</th>
+                <th>匹配度</th><th>跳出率</th><th>QS</th><th>付费率</th><th>状态</th>
+              </tr></thead>
+              <tbody id="lp-matrix-detail-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="charts-row">
+          <div class="card chart-card">
+            <div class="card-header"><h3>跳出率 vs 质量得分</h3></div>
+            <canvas id="chart-lp-scatter"></canvas>
+          </div>
+          <div class="card chart-card">
+            <div class="card-header"><h3>关键词组健康度</h3></div>
+            <canvas id="chart-lp-health"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- ====== Sub-View D: A/B 测试 ====== -->
+      <div class="lp-subview" id="lp-view-abtest">
+        <!-- ---- 列表视图 ---- -->
+        <div class="ab-list-view" id="ab-list-view">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+            <div class="view-filters">
+              <select id="ab-filter-status">
+                <option value="all">全部状态</option>
+                <option value="running">运行中</option>
+                <option value="completed">已完成</option>
+                <option value="draft">草稿</option>
+                <option value="paused">已暂停</option>
+              </select>
+              <select id="ab-filter-product">
+                <option value="all">全部产品</option>
+                <option value="Pu">Pu (Parau)</option>
+                <option value="Ppt">Ppt (PinkPinkChat)</option>
+                <option value="Ft">Ft (Fachat)</option>
+              </select>
+            </div>
+            <button class="ab-create-btn" id="ab-create-btn">+ 新建测试</button>
+          </div>
+          <div class="kpi-cards" id="ab-list-kpis"></div>
+          <div id="ab-list-ai"></div>
+          <div class="lp-page-grid" id="ab-test-grid"></div>
+        </div>
+
+        <!-- ---- 创建/编辑视图 ---- -->
+        <div class="ab-create-view" id="ab-create-view" style="display:none;">
+          <button class="lp-back-btn" id="ab-create-back">&larr; 返回测试列表</button>
+          <h2 style="margin-bottom:20px;">创建 A/B 测试</h2>
+
+          <!-- 步骤条 -->
+          <div class="ab-steps">
+            <div class="ab-step active" data-step="1"><span class="ab-step-num">1</span>基础设置</div>
+            <div class="ab-step-line"></div>
+            <div class="ab-step" data-step="2"><span class="ab-step-num">2</span>变体配置</div>
+            <div class="ab-step-line"></div>
+            <div class="ab-step" data-step="3"><span class="ab-step-num">3</span>实验参数</div>
+            <div class="ab-step-line"></div>
+            <div class="ab-step" data-step="4"><span class="ab-step-num">4</span>预览 & 启动</div>
+          </div>
+
+          <!-- Step 1: 基础设置 -->
+          <div class="ab-form-step active" id="ab-step-1">
+            <div class="card">
+              <div class="card-header"><h3>选择测试目标</h3></div>
+              <div class="ab-form-grid">
+                <div class="ab-form-group">
+                  <label class="ab-label">测试名称 *</label>
+                  <input type="text" class="ab-input" id="abc-name" placeholder="例: 首页CTA颜色优化">
+                </div>
+                <div class="ab-form-group">
+                  <label class="ab-label">产品 *</label>
+                  <select class="ab-input" id="abc-product">
+                    <option value="">请选择产品</option>
+                  </select>
+                </div>
+                <div class="ab-form-group">
+                  <label class="ab-label">落地页 *</label>
+                  <select class="ab-input" id="abc-page">
+                    <option value="">请先选择产品</option>
+                  </select>
+                </div>
+                <div class="ab-form-group">
+                  <label class="ab-label">关联版本</label>
+                  <div class="ab-input-static" id="abc-version-info">--</div>
+                </div>
+              </div>
+            </div>
+            <div class="ab-form-actions">
+              <span></span>
+              <button class="ab-btn-primary" onclick="abFormNext(2)">下一步: 变体配置 &rarr;</button>
+            </div>
+          </div>
+
+          <!-- Step 2: 变体配置 -->
+          <div class="ab-form-step" id="ab-step-2">
+            <div class="card" style="margin-bottom:16px;">
+              <div class="card-header">
+                <h3>测试元素选择</h3>
+                <span style="font-size:12px;color:var(--text-muted);">选择要在变体之间修改的元素类型</span>
+              </div>
+              <div class="ab-element-picker" id="abc-element-picker"></div>
+            </div>
+
+            <div id="abc-variants-editor"></div>
+
+            <button class="ab-btn-outline" id="abc-add-variant" style="margin-top:12px;">+ 添加变体</button>
+
+            <div class="ab-form-actions">
+              <button class="ab-btn-secondary" onclick="abFormNext(1)">&larr; 上一步</button>
+              <button class="ab-btn-primary" onclick="abFormNext(3)">下一步: 实验参数 &rarr;</button>
+            </div>
+          </div>
+
+          <!-- Step 3: 实验参数 -->
+          <div class="ab-form-step" id="ab-step-3">
+            <div class="card">
+              <div class="card-header"><h3>实验配置</h3></div>
+              <div class="ab-form-grid">
+                <div class="ab-form-group">
+                  <label class="ab-label">目标指标 *</label>
+                  <select class="ab-input" id="abc-target-metric">
+                    <option value="payRate">付费率 (payRate)</option>
+                    <option value="registerRate">注册率 (registerRate)</option>
+                    <option value="bounceRate">跳出率 (bounceRate)</option>
+                    <option value="cpa">CPA</option>
+                    <option value="roas">ROAS</option>
+                  </select>
+                </div>
+                <div class="ab-form-group">
+                  <label class="ab-label">置信度目标</label>
+                  <select class="ab-input" id="abc-confidence">
+                    <option value="95" selected>95% (推荐)</option>
+                    <option value="90">90%</option>
+                    <option value="99">99%</option>
+                  </select>
+                </div>
+                <div class="ab-form-group">
+                  <label class="ab-label">最小样本量 (每变体)</label>
+                  <input type="number" class="ab-input" id="abc-min-sample" value="1000" min="100" step="100">
+                </div>
+              </div>
+
+              <div style="margin-top:20px;">
+                <label class="ab-label">流量分配</label>
+                <div class="ab-traffic-editor" id="abc-traffic-editor"></div>
+                <div class="ab-split-bar-lg" id="abc-traffic-preview" style="margin-top:12px;"></div>
+              </div>
+            </div>
+            <div class="ab-form-actions">
+              <button class="ab-btn-secondary" onclick="abFormNext(2)">&larr; 上一步</button>
+              <button class="ab-btn-primary" onclick="abFormNext(4)">下一步: 预览 &rarr;</button>
+            </div>
+          </div>
+
+          <!-- Step 4: 预览 & 启动 -->
+          <div class="ab-form-step" id="ab-step-4">
+            <div class="card" style="margin-bottom:16px;">
+              <div class="card-header"><h3>测试预览</h3></div>
+              <div id="abc-preview"></div>
+            </div>
+            <div class="ab-form-actions">
+              <button class="ab-btn-secondary" onclick="abFormNext(3)">&larr; 上一步</button>
+              <div style="display:flex;gap:10px;">
+                <button class="ab-btn-outline" onclick="abSaveTest('draft')">保存为草稿</button>
+                <button class="ab-btn-primary ab-btn-launch" onclick="abSaveTest('running')">启动测试</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ---- 详情视图 ---- -->
+        <div class="ab-detail-view" id="ab-detail-view" style="display:none;">
+          <button class="lp-back-btn" id="ab-back-btn">&larr; 返回测试列表</button>
+
+          <div id="ab-detail-header"></div>
+          <div id="ab-traffic-split"></div>
+          <div class="kpi-cards" id="ab-detail-kpis"></div>
+
+          <div class="card" style="margin-bottom:20px;">
+            <div class="card-header"><h3>变体对比</h3></div>
+            <div id="ab-variants-compare"></div>
+          </div>
+
+          <div class="card" style="margin-bottom:20px;">
+            <div class="card-header"><h3>统计显著性</h3></div>
+            <div id="ab-significance"></div>
+          </div>
+
+          <div class="card" style="margin-bottom:20px;">
+            <div class="card-header"><h3>每日趋势</h3></div>
+            <canvas id="chart-ab-daily" style="max-height:300px;"></canvas>
+          </div>
+
+          <div id="ab-detail-ai"></div>
+
+          <div id="ab-promote-section"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== VIEW 10: Keyword Expansion ===== -->
+    <section class="view" id="view-keyword-expansion">
+      <div class="view-header">
+        <h1>关键词拓展分析</h1>
+        <div class="view-filters">
+          <select id="kw-expand-product">
+            <option value="all">全部产品</option>
+            <option value="pu">Pu (Parau) - IN</option>
+            <option value="ppt">Ppt (PinkPinkChat) - UK/US</option>
+            <option value="ft">Ft (Fachat) - IN</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="kpi-cards" id="kw-expand-kpis"></div>
+
+      <div id="kw-expand-ai"></div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>未收编的高价值搜索词（有转化但未添加为关键词）</h3>
+          <div class="data-source-tag real">ADW 真实数据交叉分析</div>
+        </div>
+        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:12px;">这些词在用户实际搜索中产生了付费转化，但尚未被添加为独立关键词。建议添加为精确匹配以提高匹配精度、降低泛匹配浪费。</p>
+        <div class="table-wrapper">
+          <table id="uncaptured-table">
+            <thead><tr>
+              <th>搜索词</th><th>来源 Campaign</th><th>当前匹配方式</th>
+              <th>新付费转化</th><th>付费金额(HKD)</th><th>首次访问</th>
+              <th>页面浏览</th><th>建议操作</th>
+            </tr></thead>
+            <tbody id="uncaptured-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>高流量但零转化的搜索词（建议否定）</h3>
+          <div class="data-source-tag real">ADW 真实数据</div>
+        </div>
+        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:12px;">这些词带来大量流量但无付费转化，可能是搜索意图不匹配。建议添加为否定关键词，节省预算。</p>
+        <div class="table-wrapper">
+          <table id="negate-table">
+            <thead><tr>
+              <th>搜索词</th><th>来源 Campaign</th><th>花费(HKD)</th>
+              <th>首次访问</th><th>页面浏览</th><th>浪费程度</th><th>建议</th>
+            </tr></thead>
+            <tbody id="negate-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="charts-row">
+        <div class="card chart-card">
+          <div class="card-header"><h3>未收编高价值词 TOP 15</h3></div>
+          <canvas id="chart-uncaptured"></canvas>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header"><h3>当前关键词覆盖率</h3></div>
+          <canvas id="chart-kw-coverage"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>中长尾关键词拓展建议</h3>
+          <div class="data-source-tag" style="background:rgba(124,58,237,0.1);color:#7c3aed;">AI 推荐</div>
+        </div>
+        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:12px;">基于你的产品特性（1V1视频聊天）和当前关键词覆盖情况，以下是按维度分类的中长尾词拓展建议。标注为「已覆盖」的词你已经在投，其余为新机会。</p>
+        <div class="view-filters" style="margin-bottom:16px;">
+          <select id="kw-suggest-category">
+            <option value="all">全部维度</option>
+            <option value="scene">场景词</option>
+            <option value="compare">对比词</option>
+            <option value="need">需求词</option>
+            <option value="geo">地域词</option>
+            <option value="longtail">长尾问句</option>
+            <option value="competitor">竞品延伸词</option>
+          </select>
+          <select id="kw-suggest-market">
+            <option value="all">全部市场</option>
+            <option value="IN">印度 (IN)</option>
+            <option value="US">美国 (US)</option>
+            <option value="UK">英国 (UK)</option>
+            <option value="ME">中东 (ME)</option>
+          </select>
+        </div>
+        <div class="table-wrapper">
+          <table id="suggest-table">
+            <thead><tr>
+              <th>建议关键词</th><th>维度</th><th>适用市场</th>
+              <th>适用产品</th><th>预估竞争度</th><th>预估搜索量</th>
+              <th>当前状态</th><th>理由</th>
+            </tr></thead>
+            <tbody id="suggest-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== VIEW 6: Alerts ===== -->
+    <section class="view" id="view-alerts">
+      <div class="view-header">
+        <h1>优化建议中心</h1>
+        <div class="data-source-tag real">基于真实数据的 AI 分析</div>
+      </div>
+      <div class="alert-filters">
+        <button class="alert-filter-btn active" data-severity="all">全部</button>
+        <button class="alert-filter-btn" data-severity="critical">🔴 紧急</button>
+        <button class="alert-filter-btn" data-severity="warning">🟡 优化</button>
+        <button class="alert-filter-btn" data-severity="info">💡 建议</button>
+        <button class="alert-filter-btn" data-severity="positive">🟢 亮点</button>
+      </div>
+      <div class="alerts-list" id="alerts-list"></div>
+    </section>
+  </main>
+
+  <!-- Keyword Detail Drawer -->
+  <div class="drawer-overlay" id="drawer-overlay"></div>
+  <aside class="drawer" id="keyword-drawer">
+    <div class="drawer-header">
+      <div class="drawer-title-row">
+        <h2 id="drawer-keyword-name"></h2>
+        <button class="drawer-close" id="drawer-close">&times;</button>
+      </div>
+      <div class="drawer-subtitle" id="drawer-subtitle"></div>
+    </div>
+    <div class="drawer-body" id="drawer-body"></div>
+  </aside>
+
+  <script src="js/data.js"></script>
+  <script src="js/adw_data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

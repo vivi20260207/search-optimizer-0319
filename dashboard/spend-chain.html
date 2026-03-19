@@ -1,0 +1,1243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Search 花钱链分析后台</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="js/data.js"></script>
+<script src="js/adw_data.js"></script>
+<style>
+:root {
+  --bg: #0f1117;
+  --card: #1a1d27;
+  --card-hover: #22263a;
+  --border: #2a2e3e;
+  --text: #e4e6ef;
+  --text2: #9da1b4;
+  --accent: #6366f1;
+  --accent2: #818cf8;
+  --green: #22c55e;
+  --red: #ef4444;
+  --orange: #f59e0b;
+  --blue: #3b82f6;
+  --cyan: #06b6d4;
+  --pink: #ec4899;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+.container { max-width: 1440px; margin: 0 auto; padding: 20px; }
+
+/* Header */
+.header { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+.header h1 { font-size: 22px; font-weight: 700; }
+.header h1 span { color: var(--accent); }
+.header-meta { font-size: 13px; color: var(--text2); }
+
+/* Tabs */
+.tabs { display: flex; gap: 4px; margin-bottom: 24px; overflow-x: auto; padding-bottom: 4px; }
+.tab { padding: 8px 16px; border-radius: 8px; background: var(--card); color: var(--text2); cursor: pointer; font-size: 13px; font-weight: 500; white-space: nowrap; border: 1px solid transparent; transition: all .2s; }
+.tab:hover { background: var(--card-hover); color: var(--text); }
+.tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* Cards */
+.grid { display: grid; gap: 16px; }
+.g2 { grid-template-columns: 1fr 1fr; }
+.g3 { grid-template-columns: 1fr 1fr 1fr; }
+.g4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+.g5 { grid-template-columns: 1fr 1fr 1fr 1fr 1fr; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+.card-title { font-size: 13px; color: var(--text2); font-weight: 500; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+.card-title .tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+.tag-real { background: rgba(34,197,94,.15); color: var(--green); }
+.tag-mock { background: rgba(245,158,11,.15); color: var(--orange); }
+
+/* KPI Cards */
+.kpi { text-align: center; }
+.kpi-value { font-size: 28px; font-weight: 700; margin: 4px 0; }
+.kpi-sub { font-size: 12px; color: var(--text2); }
+.kpi-green { color: var(--green); }
+.kpi-red { color: var(--red); }
+.kpi-blue { color: var(--blue); }
+.kpi-orange { color: var(--orange); }
+.kpi-accent { color: var(--accent2); }
+
+/* Tables */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; padding: 10px 12px; border-bottom: 2px solid var(--border); color: var(--text2); font-weight: 600; white-space: nowrap; position: sticky; top: 0; background: var(--card); }
+td { padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+tr:hover td { background: rgba(99,102,241,.05); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.good { color: var(--green); }
+.bad { color: var(--red); }
+.warn { color: var(--orange); }
+.highlight-row { background: rgba(99,102,241,.08); }
+
+/* Charts */
+.chart-box { position: relative; height: 300px; }
+.chart-box-sm { height: 220px; }
+
+/* Badges */
+.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.badge-high { background: rgba(34,197,94,.15); color: var(--green); }
+.badge-mid { background: rgba(59,130,246,.15); color: var(--blue); }
+.badge-low { background: rgba(239,68,68,.15); color: var(--red); }
+
+/* Section */
+.section { display: none; }
+.section.active { display: block; }
+.section-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+.section-sub { font-size: 14px; font-weight: 600; margin: 20px 0 12px; color: var(--text2); border-left: 3px solid var(--accent); padding-left: 10px; }
+
+/* Filter */
+.filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.filter-btn { padding: 6px 12px; border-radius: 6px; background: var(--card); color: var(--text2); border: 1px solid var(--border); cursor: pointer; font-size: 12px; transition: all .2s; }
+.filter-btn:hover, .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* Scrollable table */
+.scroll-table { max-height: 500px; overflow-y: auto; }
+.scroll-table::-webkit-scrollbar { width: 6px; }
+.scroll-table::-webkit-scrollbar-track { background: var(--card); }
+.scroll-table::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* Funnel */
+.funnel { display: flex; align-items: center; gap: 8px; margin: 20px 0; justify-content: center; }
+.funnel-step { text-align: center; padding: 12px 20px; border-radius: 10px; background: var(--card); border: 1px solid var(--border); min-width: 120px; }
+.funnel-step .val { font-size: 20px; font-weight: 700; }
+.funnel-step .lbl { font-size: 11px; color: var(--text2); }
+.funnel-arrow { color: var(--text2); font-size: 20px; }
+.funnel-rate { font-size: 11px; color: var(--accent2); font-weight: 600; }
+
+/* Progress */
+.progress-bar { background: var(--border); border-radius: 4px; height: 8px; overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 4px; transition: width .3s; }
+
+/* Responsive */
+@media (max-width: 1024px) { .g4, .g5 { grid-template-columns: 1fr 1fr; } .g3 { grid-template-columns: 1fr; } }
+@media (max-width: 768px) { .g2, .g4, .g5 { grid-template-columns: 1fr; } .tabs { flex-wrap: wrap; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1><span>Search</span> 花钱链分析后台</h1>
+    <div class="header-meta">数据周期: 2026-02-01 ~ 2026-03-18 | 仅 Search 广告系列</div>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <div class="tab active" data-tab="overview">花钱链总览</div>
+    <div class="tab" data-tab="budget-imp">Budget → Impression</div>
+    <div class="tab" data-tab="imp-click">Impression → Click</div>
+    <div class="tab" data-tab="cpc">Click Cost (CPC)</div>
+    <div class="tab" data-tab="click-conv">Click → Conversion</div>
+    <div class="tab" data-tab="search-terms">搜索词分析</div>
+    <div class="tab" data-tab="geo">地理分析</div>
+    <div class="tab" data-tab="schedule">时段分析</div>
+  </div>
+
+  <!-- Tab 1: Overview -->
+  <div class="section active" id="sec-overview"></div>
+  <!-- Tab 2 -->
+  <div class="section" id="sec-budget-imp"></div>
+  <!-- Tab 3 -->
+  <div class="section" id="sec-imp-click"></div>
+  <!-- Tab 4 -->
+  <div class="section" id="sec-cpc"></div>
+  <!-- Tab 5 -->
+  <div class="section" id="sec-click-conv"></div>
+  <!-- Tab 6 -->
+  <div class="section" id="sec-search-terms"></div>
+  <!-- Tab 7 -->
+  <div class="section" id="sec-geo"></div>
+  <!-- Tab 8 -->
+  <div class="section" id="sec-schedule"></div>
+</div>
+
+<script>
+// =============================================
+// DATA PREPARATION - Filter to Search only
+// =============================================
+const SEARCH_CAMPAIGNS = CAMPAIGN_SUMMARY.filter(c => c.type === 'Search');
+
+function getKeywordType(campaign) {
+  if (campaign.name.includes('品牌词')) return '品牌词';
+  if (campaign.name.includes('竞品词')) return '竞品词';
+  if (campaign.name.includes('功能词') || campaign.name.includes('广泛')) return '功能词';
+  if (campaign.name.includes('emerald')) return '竞品词';
+  return '功能词';
+}
+
+function fmt(n, d=2) { if (n == null || isNaN(n)) return '--'; return Number(n).toFixed(d); }
+function fmtK(n) { if (n >= 1000) return (n/1000).toFixed(1) + 'K'; return n; }
+function fmtPct(n) { return fmt(n*100, 1) + '%'; }
+function pct(a, b) { return b ? (a/b*100) : 0; }
+
+const ALL_KEYWORDS = {
+  'Pu-IN-Comp': typeof ADW_PU_IN_COMP_KEYWORDS !== 'undefined' ? ADW_PU_IN_COMP_KEYWORDS : [],
+  'Pu-IN-Brand': typeof ADW_PU_IN_BRAND_KEYWORDS !== 'undefined' ? ADW_PU_IN_BRAND_KEYWORDS : [],
+  'Ppt-UK': typeof ADW_PPT_UK_KEYWORDS !== 'undefined' ? ADW_PPT_UK_KEYWORDS : [],
+  'Ppt-US': typeof ADW_PPT_US_KEYWORDS !== 'undefined' ? ADW_PPT_US_KEYWORDS : [],
+  'Ft-IN-Func': typeof ADW_FT_IN_FUNC_KEYWORDS !== 'undefined' ? ADW_FT_IN_FUNC_KEYWORDS : [],
+  'Pu-IN-Emerald': typeof ADW_PU_IN_EMERALD_KEYWORDS !== 'undefined' ? ADW_PU_IN_EMERALD_KEYWORDS : [],
+};
+
+const ALL_SEARCH_TERMS = {
+  'Pu-IN-Comp': typeof ADW_PU_IN_COMP_SEARCH_TERMS !== 'undefined' ? ADW_PU_IN_COMP_SEARCH_TERMS : [],
+  'Pu-IN-Brand': typeof ADW_PU_IN_BRAND_SEARCH_TERMS !== 'undefined' ? ADW_PU_IN_BRAND_SEARCH_TERMS : [],
+  'Ppt-UK': typeof ADW_PPT_UK_SEARCH_TERMS !== 'undefined' ? ADW_PPT_UK_SEARCH_TERMS : [],
+  'Ppt-US': typeof ADW_PPT_US_SEARCH_TERMS !== 'undefined' ? ADW_PPT_US_SEARCH_TERMS : [],
+  'Ft-IN-Func': typeof ADW_FT_IN_FUNC_SEARCH_TERMS !== 'undefined' ? ADW_FT_IN_FUNC_SEARCH_TERMS : [],
+  'Pu-IN-Emerald': typeof ADW_PU_IN_EMERALD_SEARCH_TERMS !== 'undefined' ? ADW_PU_IN_EMERALD_SEARCH_TERMS : [],
+};
+
+const FLAT_KEYWORDS = [];
+Object.entries(ALL_KEYWORDS).forEach(([camp, kws]) => {
+  kws.forEach(kw => FLAT_KEYWORDS.push({...kw, campaign: camp}));
+});
+
+// =============================================
+// TAB SWITCHING
+// =============================================
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('sec-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+// =============================================
+// TAB 1: 花钱链总览
+// =============================================
+function renderOverview() {
+  const el = document.getElementById('sec-overview');
+  const totalSpend = SEARCH_CAMPAIGNS.reduce((s, c) => s + c.spend, 0);
+  const totalRev = SEARCH_CAMPAIGNS.reduce((s, c) => s + c.totalRevenue, 0);
+  const totalNew = SEARCH_CAMPAIGNS.reduce((s, c) => s + c.newUsers, 0);
+  const totalAndroid = SEARCH_CAMPAIGNS.reduce((s, c) => s + c.newAndroid, 0);
+  const totalIOS = SEARCH_CAMPAIGNS.reduce((s, c) => s + c.newIOS, 0);
+  const totalNewPay = SEARCH_CAMPAIGNS.reduce((s, c) => s + c.newPayUsers, 0);
+  const avgRoas = totalRev / totalSpend;
+  const iosRatio = totalIOS / (totalAndroid + totalIOS) * 100;
+  const androidWaste = totalAndroid / totalNew * 100;
+
+  el.innerHTML = `
+    <div class="section-title">花钱链总览 <span class="card-title"><span class="tag tag-real">REAL</span></span></div>
+    <div class="grid g5" style="margin-bottom:20px">
+      <div class="card kpi">
+        <div class="card-title">总 Spend (HKD)</div>
+        <div class="kpi-value">${fmtK(Math.round(totalSpend))}</div>
+        <div class="kpi-sub">${SEARCH_CAMPAIGNS.length} 个 Search 系列</div>
+      </div>
+      <div class="card kpi">
+        <div class="card-title">总 Revenue (HKD)</div>
+        <div class="kpi-value">${fmtK(Math.round(totalRev))}</div>
+        <div class="kpi-sub">含新+老用户收入</div>
+      </div>
+      <div class="card kpi">
+        <div class="card-title">综合 ROAS</div>
+        <div class="kpi-value ${avgRoas >= 1 ? 'kpi-green' : 'kpi-red'}">${fmt(avgRoas)}</div>
+        <div class="kpi-sub">${avgRoas >= 1 ? '回本' : '亏损中'}</div>
+      </div>
+      <div class="card kpi">
+        <div class="card-title">iOS 用户占比</div>
+        <div class="kpi-value kpi-blue">${fmt(iosRatio,1)}%</div>
+        <div class="kpi-sub">iOS ${totalIOS} / Android ${totalAndroid}</div>
+      </div>
+      <div class="card kpi">
+        <div class="card-title">Android 浪费比</div>
+        <div class="kpi-value kpi-red">${fmt(androidWaste,1)}%</div>
+        <div class="kpi-sub">≈${fmtK(Math.round(totalSpend * androidWaste / 100))} HKD 浪费</div>
+      </div>
+    </div>
+
+    <div class="section-sub">花钱链漏斗（全 Search 汇总）</div>
+    <div class="funnel">
+      <div class="funnel-step"><div class="val">${fmtK(Math.round(totalSpend))}</div><div class="lbl">Spend (HKD)</div></div>
+      <div><div class="funnel-arrow">→</div></div>
+      <div class="funnel-step"><div class="val">${fmtK(totalNew)}</div><div class="lbl">新用户</div></div>
+      <div><div class="funnel-arrow">→</div><div class="funnel-rate">iOS ${fmt(iosRatio,0)}%</div></div>
+      <div class="funnel-step"><div class="val">${fmtK(totalIOS)}</div><div class="lbl">iOS 用户</div></div>
+      <div><div class="funnel-arrow">→</div></div>
+      <div class="funnel-step"><div class="val">${totalNewPay}</div><div class="lbl">新付费用户</div></div>
+      <div><div class="funnel-arrow">→</div></div>
+      <div class="funnel-step"><div class="val">${fmtK(Math.round(totalRev))}</div><div class="lbl">Revenue (HKD)</div></div>
+    </div>
+
+    <div class="section-sub">各 Search Campaign 详情</div>
+    <div class="card">
+      <div class="scroll-table table-wrap">
+        <table>
+          <thead><tr>
+            <th>Campaign</th><th>产品</th><th>市场</th><th>词类</th><th>出价策略</th>
+            <th class="num">Spend</th><th class="num">Revenue</th><th class="num">ROAS</th>
+            <th class="num">新用户</th><th class="num">Android</th><th class="num">iOS</th><th class="num">iOS%</th>
+            <th class="num">新付费</th><th class="num">CPA</th>
+            <th class="num">Android付费率</th><th class="num">iOS付费率</th>
+          </tr></thead>
+          <tbody>
+            ${SEARCH_CAMPAIGNS.sort((a,b) => b.spend - a.spend).map(c => {
+              const iosR = c.newIOS / (c.newAndroid + c.newIOS) * 100;
+              const kwType = getKeywordType(c);
+              return `<tr>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${c.name}">${c.name.replace(/web-|2\.5-/g, '').substring(0,30)}</td>
+                <td>${c.product}</td><td>${c.country}</td>
+                <td><span class="badge ${kwType==='品牌词'?'badge-high':kwType==='竞品词'?'badge-mid':'badge-low'}">${kwType}</span></td>
+                <td>${c.bidding}</td>
+                <td class="num">${fmtK(Math.round(c.spend))}</td>
+                <td class="num">${fmtK(Math.round(c.totalRevenue))}</td>
+                <td class="num ${c.roas >= 1 ? 'good' : c.roas >= 0.5 ? 'warn' : 'bad'}">${fmt(c.roas)}</td>
+                <td class="num">${fmtK(c.newUsers)}</td>
+                <td class="num">${fmtK(c.newAndroid)}</td>
+                <td class="num">${fmtK(c.newIOS)}</td>
+                <td class="num ${iosR > 80 ? 'good' : iosR > 50 ? 'warn' : 'bad'}">${fmt(iosR,0)}%</td>
+                <td class="num">${c.newPayUsers}</td>
+                <td class="num">${fmt(c.newCPA)}</td>
+                <td class="num">${c.androidPayRate}</td>
+                <td class="num good">${c.iosPayRate}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card">
+        <div class="card-title">Spend 分布（按 Campaign）<span class="tag tag-real">REAL</span></div>
+        <div class="chart-box"><canvas id="chart-spend-dist"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">iOS vs Android 新用户（按 Campaign）<span class="tag tag-real">REAL</span></div>
+        <div class="chart-box"><canvas id="chart-ios-android"></canvas></div>
+      </div>
+    </div>
+
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card">
+        <div class="card-title">ROAS 分布<span class="tag tag-real">REAL</span></div>
+        <div class="chart-box"><canvas id="chart-roas-dist"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">iOS 付费率 vs Android 付费率<span class="tag tag-real">REAL</span></div>
+        <div class="chart-box"><canvas id="chart-payrate"></canvas></div>
+      </div>
+    </div>
+  `;
+
+  const sortedC = SEARCH_CAMPAIGNS.sort((a,b) => b.spend - a.spend);
+  const labels = sortedC.map(c => c.product + '-' + c.country + '-' + getKeywordType(c));
+
+  new Chart(document.getElementById('chart-spend-dist'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label: 'Spend (HKD)', data: sortedC.map(c => c.spend), backgroundColor: '#6366f1' }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#9da1b4', font: { size: 10 } } }, y: { ticks: { color: '#9da1b4' }, grid: { color: '#2a2e3e' } } } }
+  });
+
+  new Chart(document.getElementById('chart-ios-android'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'iOS', data: sortedC.map(c => c.newIOS), backgroundColor: '#3b82f6' },
+        { label: 'Android', data: sortedC.map(c => c.newAndroid), backgroundColor: '#ef4444' }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#9da1b4' } } }, scales: { x: { stacked: true, ticks: { color: '#9da1b4', font: { size: 10 } } }, y: { stacked: true, ticks: { color: '#9da1b4' }, grid: { color: '#2a2e3e' } } } }
+  });
+
+  new Chart(document.getElementById('chart-roas-dist'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label: 'ROAS', data: sortedC.map(c => c.roas), backgroundColor: sortedC.map(c => c.roas >= 1 ? '#22c55e' : c.roas >= 0.5 ? '#f59e0b' : '#ef4444') }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, annotation: {} }, scales: { x: { ticks: { color: '#9da1b4', font: { size: 10 } } }, y: { ticks: { color: '#9da1b4' }, grid: { color: '#2a2e3e' } } } }
+  });
+
+  new Chart(document.getElementById('chart-payrate'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'iOS 付费率', data: sortedC.map(c => parseFloat(c.iosPayRate) || 0), backgroundColor: '#3b82f6' },
+        { label: 'Android 付费率', data: sortedC.map(c => parseFloat(c.androidPayRate) || 0), backgroundColor: '#ef4444' }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#9da1b4' } } }, scales: { x: { ticks: { color: '#9da1b4', font: { size: 10 } } }, y: { ticks: { color: '#9da1b4' }, grid: { color: '#2a2e3e' } } } }
+  });
+}
+
+// =============================================
+// TAB 2: Budget → Impression
+// =============================================
+function renderBudgetImp() {
+  const el = document.getElementById('sec-budget-imp');
+
+  const qsData = FLAT_KEYWORDS.filter(k => k.qualityScore && k.qualityScore !== '');
+  const qsCounts = [0,0,0,0,0,0,0,0,0,0,0];
+  qsData.forEach(k => { const qs = parseInt(k.qualityScore); if (qs >= 1 && qs <= 10) qsCounts[qs]++; });
+
+  const eCtrMap = { '高于平均水平': 0, '平均水平': 0, '低于平均水平': 0 };
+  const adRelMap = { '高于平均水平': 0, '平均水平': 0, '低于平均水平': 0 };
+  const lpExpMap = { '高于平均水平': 0, '平均水平': 0, '低于平均水平': 0 };
+  qsData.forEach(k => {
+    if (k.expectedCTR && eCtrMap[k.expectedCTR] !== undefined) eCtrMap[k.expectedCTR]++;
+    if (k.adRelevance && adRelMap[k.adRelevance] !== undefined) adRelMap[k.adRelevance]++;
+    if (k.landingPageExp && lpExpMap[k.landingPageExp] !== undefined) lpExpMap[k.landingPageExp]++;
+  });
+
+  const kwByCamp = {};
+  Object.entries(ALL_KEYWORDS).forEach(([camp, kws]) => {
+    kwByCamp[camp] = { count: kws.length, totalClicks: kws.reduce((s,k) => s + (k.clicks||0), 0), totalCost: kws.reduce((s,k) => s + (k.cost||0), 0), totalImp: kws.reduce((s,k) => s + (k.impressions||0), 0) };
+  });
+
+  const matchTypes = {};
+  FLAT_KEYWORDS.forEach(k => {
+    const mt = k.matchType || '未知';
+    if (!matchTypes[mt]) matchTypes[mt] = { count: 0, clicks: 0, cost: 0, imp: 0 };
+    matchTypes[mt].count++;
+    matchTypes[mt].clicks += k.clicks || 0;
+    matchTypes[mt].cost += k.cost || 0;
+    matchTypes[mt].imp += k.impressions || 0;
+  });
+
+  el.innerHTML = `
+    <div class="section-title">Budget → Impression</div>
+    <p style="color:var(--text2);margin-bottom:16px;font-size:13px">预算如何转化为展示：Quality Score、关键词覆盖面、展示份额</p>
+
+    <div class="section-sub">Quality Score 分布 <span class="tag tag-real">REAL</span></div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card-title">QS 分数分布（${qsData.length} 个有 QS 的关键词）</div>
+        <div class="chart-box chart-box-sm"><canvas id="chart-qs-dist"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">QS 三因素分布</div>
+        <div class="chart-box chart-box-sm"><canvas id="chart-qs-factors"></canvas></div>
+      </div>
+    </div>
+
+    <div class="section-sub">QS 三因素详情 <span class="tag tag-real">REAL</span></div>
+    <div class="grid g3" style="margin-bottom:16px">
+      <div class="card">
+        <div class="card-title">Expected CTR</div>
+        ${Object.entries(eCtrMap).map(([k,v]) => `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0">
+            <span class="${k==='高于平均水平'?'good':k==='低于平均水平'?'bad':''}">${k}</span>
+            <span>${v} 个 (${fmt(v/qsData.length*100,0)}%)</span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:${v/qsData.length*100}%;background:${k==='高于平均水平'?'var(--green)':k==='低于平均水平'?'var(--red)':'var(--blue)'}"></div></div>
+        `).join('')}
+      </div>
+      <div class="card">
+        <div class="card-title">Ad Relevance</div>
+        ${Object.entries(adRelMap).map(([k,v]) => `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0">
+            <span class="${k==='高于平均水平'?'good':k==='低于平均水平'?'bad':''}">${k}</span>
+            <span>${v} 个 (${fmt(v/qsData.length*100,0)}%)</span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:${v/qsData.length*100}%;background:${k==='高于平均水平'?'var(--green)':k==='低于平均水平'?'var(--red)':'var(--blue)'}"></div></div>
+        `).join('')}
+      </div>
+      <div class="card">
+        <div class="card-title">Landing Page Experience</div>
+        ${Object.entries(lpExpMap).map(([k,v]) => `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0">
+            <span class="${k==='高于平均水平'?'good':k==='低于平均水平'?'bad':''}">${k}</span>
+            <span>${v} 个 (${fmt(v/qsData.length*100,0)}%)</span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:${v/qsData.length*100}%;background:${k==='高于平均水平'?'var(--green)':k==='低于平均水平'?'var(--red)':'var(--blue)'}"></div></div>
+        `).join('')}
+      </div>
+    </div>
+
+    <div class="section-sub">关键词覆盖面 <span class="tag tag-real">REAL</span></div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card-title">各 Campaign 关键词数量 & 花费</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Campaign</th><th class="num">关键词数</th><th class="num">总点击</th><th class="num">总花费(HKD)</th><th class="num">总展示</th><th class="num">CTR</th></tr></thead>
+            <tbody>
+              ${Object.entries(kwByCamp).map(([camp, d]) => `
+                <tr><td>${camp}</td><td class="num">${d.count}</td><td class="num">${fmtK(d.totalClicks)}</td><td class="num">${fmtK(Math.round(d.totalCost))}</td><td class="num">${fmtK(d.totalImp)}</td><td class="num">${fmt(d.totalClicks/d.totalImp*100,1)}%</td></tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">匹配类型分布</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>匹配类型</th><th class="num">关键词数</th><th class="num">总点击</th><th class="num">总花费</th><th class="num">Avg CPC</th></tr></thead>
+            <tbody>
+              ${Object.entries(matchTypes).sort((a,b) => b[1].cost - a[1].cost).map(([mt, d]) => `
+                <tr><td>${mt}</td><td class="num">${d.count}</td><td class="num">${fmtK(d.clicks)}</td><td class="num">${fmtK(Math.round(d.cost))}</td><td class="num">${fmt(d.cost/d.clicks)}</td></tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-sub">Impression Share 分析 <span class="tag tag-real">REAL</span></div>
+    <div class="card">
+      <p style="color:var(--text2);font-size:13px;margin-bottom:12px">大部分关键词的展示份额 < 10%，说明竞争中只吃到了市场的一小部分</p>
+      <div class="scroll-table table-wrap" style="max-height:400px">
+        <table>
+          <thead><tr><th>Campaign</th><th>关键词</th><th class="num">QS</th><th class="num">展示份额</th><th class="num">Clicks</th><th class="num">CPC</th><th class="num">Cost</th><th>Expected CTR</th><th>Ad Relevance</th><th>LP Exp</th></tr></thead>
+          <tbody>
+            ${FLAT_KEYWORDS.filter(k => k.clicks > 50).sort((a,b) => (b.cost||0) - (a.cost||0)).slice(0, 40).map(k => `
+              <tr>
+                <td>${k.campaign}</td><td>${k.keyword}</td>
+                <td class="num ${parseInt(k.qualityScore)>=8?'good':parseInt(k.qualityScore)>=6?'warn':'bad'}">${k.qualityScore||'--'}</td>
+                <td class="num ${k.impressionShare === '< 10%' ? 'bad' : ''}">${k.impressionShare || '--'}</td>
+                <td class="num">${fmtK(k.clicks)}</td>
+                <td class="num">${fmt(k.cpc)}</td>
+                <td class="num">${fmtK(Math.round(k.cost||0))}</td>
+                <td><span class="${k.expectedCTR==='高于平均水平'?'good':k.expectedCTR==='低于平均水平'?'bad':''}">${k.expectedCTR||'--'}</span></td>
+                <td><span class="${k.adRelevance==='高于平均水平'?'good':k.adRelevance==='低于平均水平'?'bad':''}">${k.adRelevance||'--'}</span></td>
+                <td><span class="${k.landingPageExp==='高于平均水平'?'good':k.landingPageExp==='低于平均水平'?'bad':''}">${k.landingPageExp||'--'}</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  new Chart(document.getElementById('chart-qs-dist'), {
+    type: 'bar',
+    data: {
+      labels: ['1','2','3','4','5','6','7','8','9','10'],
+      datasets: [{ label: '关键词数量', data: qsCounts.slice(1), backgroundColor: qsCounts.slice(1).map((v,i) => i >= 7 ? '#22c55e' : i >= 5 ? '#f59e0b' : '#ef4444') }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#9da1b4' } }, y: { ticks: { color: '#9da1b4' }, grid: { color: '#2a2e3e' } } } }
+  });
+
+  const factorLabels = ['高于平均', '平均', '低于平均'];
+  new Chart(document.getElementById('chart-qs-factors'), {
+    type: 'bar',
+    data: {
+      labels: factorLabels,
+      datasets: [
+        { label: 'Expected CTR', data: [eCtrMap['高于平均水平'], eCtrMap['平均水平'], eCtrMap['低于平均水平']], backgroundColor: '#6366f1' },
+        { label: 'Ad Relevance', data: [adRelMap['高于平均水平'], adRelMap['平均水平'], adRelMap['低于平均水平']], backgroundColor: '#3b82f6' },
+        { label: 'LP Experience', data: [lpExpMap['高于平均水平'], lpExpMap['平均水平'], lpExpMap['低于平均水平']], backgroundColor: '#06b6d4' }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#9da1b4' } } }, scales: { x: { ticks: { color: '#9da1b4' } }, y: { ticks: { color: '#9da1b4' }, grid: { color: '#2a2e3e' } } } }
+  });
+}
+
+// =============================================
+// TAB 3: Impression → Click (CTR)
+// =============================================
+function renderImpClick() {
+  const el = document.getElementById('sec-imp-click');
+
+  const ctrByCamp = {};
+  Object.entries(ALL_KEYWORDS).forEach(([camp, kws]) => {
+    const totClicks = kws.reduce((s,k) => s + (k.clicks||0), 0);
+    const totImp = kws.reduce((s,k) => s + (k.impressions||0), 0);
+    ctrByCamp[camp] = { clicks: totClicks, imp: totImp, ctr: totImp ? totClicks/totImp*100 : 0 };
+  });
+
+  const topKwByCTR = FLAT_KEYWORDS.filter(k => k.clicks > 20 && k.impressions > 50).sort((a,b) => (b.clicks/b.impressions) - (a.clicks/a.impressions));
+
+  const assets = typeof ADW_PU_IN_COMP_ASSETS !== 'undefined' ? ADW_PU_IN_COMP_ASSETS : [];
+  const headlines = assets.filter(a => a.type === '标题');
+  const descs = assets.filter(a => a.type === '广告内容描述');
+
+  el.innerHTML = `
+    <div class="section-title">Impression → Click (CTR)</div>
+    <p style="color:var(--text2);margin-bottom:16px;font-size:13px">展示如何变为点击：CTR 按 Campaign / 关键词 / 广告素材拆解</p>
+
+    <div class="section-sub">CTR 按 Campaign <span class="tag tag-real">REAL</span></div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card-title">各 Campaign CTR 对比</div>
+        <div class="chart-box chart-box-sm"><canvas id="chart-ctr-camp"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">CTR 明细</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Campaign</th><th class="num">展示</th><th class="num">点击</th><th class="num">CTR</th></tr></thead>
+            <tbody>
+              ${Object.entries(ctrByCamp).sort((a,b) => b[1].ctr - a[1].ctr).map(([camp, d]) => `
+                <tr><td>${camp}</td><td class="num">${fmtK(d.imp)}</td><td class="num">${fmtK(d.clicks)}</td><td class="num ${d.ctr > 15 ? 'good' : d.ctr > 10 ? '' : 'warn'}">${fmt(d.ctr,1)}%</td></tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-sub">CTR Top / Bottom 关键词 <span class="tag tag-real">REAL</span></div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card-title" style="color:var(--green)">CTR 最高 Top 15（clicks>20）</div>
+        <div class="scroll-table table-wrap">
+          <table>
+            <thead><tr><th>关键词</th><th>Campaign</th><th class="num">CTR</th><th class="num">Clicks</th><th class="num">Imp</th><th class="num">QS</th></tr></thead>
+            <tbody>
+              ${topKwByCTR.slice(0, 15).map(k => `
+                <tr><td>${k.keyword}</td><td>${k.campaign}</td><td class="num good">${fmt(k.clicks/k.impressions*100,1)}%</td><td class="num">${fmtK(k.clicks)}</td><td class="num">${fmtK(k.impressions)}</td><td class="num">${k.qualityScore||'--'}</td></tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--red)">CTR 最低 Bottom 15（clicks>20）</div>
+        <div class="scroll-table table-wrap">
+          <table>
+            <thead><tr><th>关键词</th><th>Campaign</th><th class="num">CTR</th><th class="num">Clicks</th><th class="num">Imp</th><th class="num">QS</th></tr></thead>
+            <tbody>
+              ${topKwByCTR.slice(-15).reverse().map(k => `
+                <tr><td>${k.keyword}</td><td>${k.campaign}</td><td class="num bad">${fmt(k.clicks/k.impressions*100,1)}%</td><td class="num">${fmtK(k.clicks)}</td><td class="num">${fmtK(k.impressions)}</td><td class="num">${k.qualityScore||'--'}</td></tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-sub">广告素材表现 (Pu-IN-Comp) <span class="tag tag-real">REAL</span></div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card-title">标题素材 (Headlines)</div>
+        <div class="scroll-table table-wrap">
+          <table>
+            <thead><tr><th>标题</th><th class="num">转化数</th><th class="num">转化价值</th><th>状态</th></tr></thead>
+            <tbody>
+              ${headlines.sort((a,b) => b.purchaseConv - a.purchaseConv).map(a => `
+                <tr><td style="max-width:250px;overflow:hidden;text-overflow:ellipsis" title="${a.asset}">${a.asset}</td><td class="num">${fmt(a.purchaseConv,0)}</td><td class="num">${fmt(a.purchaseValue,0)}</td><td>${a.status === '有效' ? '<span class="good">有效</span>' : '<span class="warn">'+a.status+'</span>'}</td></tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">描述 + 附加信息素材</div>
+        <div class="scroll-table table-wrap">
+          <table>
+            <thead><tr><th>素材</th><th>类型</th><th class="num">转化数</th><th class="num">转化价值</th></tr></thead>
+            <tbody>
+              ${[...descs, ...assets.filter(a => ['宣传信息','站内链接','结构化摘要'].includes(a.type))].sort((a,b) => b.purchaseConv - a.purchaseConv).map(a => `
+                <tr><td style="max-width:280px;overflow:hidden;text-overflow:ellipsis" title="${a.asset}">${a.asset.substring(0,60)}</td><td><span class="badge badge-mid">${a.type}</span></td><td class="num">${fmt(a.purchaseConv,0)}</td><td class="num">${fmt(a.purchaseValue,0)}</td></tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const campLabels = Object.keys(ctrByCamp);
+  new Chart(document.getElementById('chart-ctr-camp'), {
+    type: 'bar',
+    data: {
+      labels: campLabels,
+      datasets: [{ label: 'CTR %', data: campLabels.map(c => ctrByCamp[c].ctr), backgroundColor: '#6366f1' }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#9da1b4' }, grid: { color: '#2a2e3e' } }, y: { ticks: { color: '#9da1b4', font: { size: 10 } } } } }
+  });
+}
+
+// =============================================
+// TAB 4: CPC Analysis
+// =============================================
+function renderCPC() {
+  const el = document.getElementById('sec-cpc');
+
+  const cpcByCamp = {};
+  Object.entries(ALL_KEYWORDS).forEach(([camp, kws]) => {
+    const totClicks = kws.reduce((s,k) => s + (k.clicks||0), 0);
+    const totCost = kws.reduce((s,k) => s + (k.cost||0), 0);
+    cpcByCamp[camp] = { clicks: totClicks, cost: totCost, cpc: totClicks ? totCost/totClicks : 0 };
+  });
+
+  const qsCpcData = FLAT_KEYWORDS.filter(k => k.qualityScore && k.qualityScore !== '' && k.clicks > 10).map(k => ({
+    qs: parseInt(k.qualityScore), cpc: k.cpc, keyword: k.keyword, campaign: k.campaign, cost: k.cost || 0
+  }));
+
+  const avgCpcByQs = {};
+  qsCpcData.forEach(d => {
+    if (!avgCpcByQs[d.qs]) avgCpcByQs[d.qs] = { total: 0, count: 0 };
+    avgCpcByQs[d.qs].total += d.cpc;
+    avgCpcByQs[d.qs].count++;
+  });
+
+  const topExpensive = FLAT_KEYWORDS.filter(k => k.clicks > 20).sort((a,b) => b.cpc - a.cpc);
+
+  el.innerHTML = `
+    <div class="section-title">Click Cost (CPC)</div>
+    <p style="color:var(--text2);margin-bottom:16px;font-size:13px">每次点击花多少钱：按 Campaign / QS / 关键词拆解</p>
+
+    <div class="section-sub">CPC 按 Campaign <span class="tag tag-real">REAL</span></div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card-title">各 Campaign 平均 CPC</div>
+        <div class="chart-box chart-box-sm"><canvas id="chart-cpc-camp"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">CPC 明细</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Campaign</th><th class="num">总花费</th><th class="num">总点击</th><th class="num">Avg CPC</th></tr></thead>
+            <tbody>
+              ${Object.entries(cpcByCamp).sort((a,b) => b[1].cpc - a[1].cpc).map(([camp, d]) => `
+                <tr><td>${camp}</td><td class="num">${fmtK(Math.round(d.cost))}</td><td class="num">${fmtK(d.clicks)}</td><td class="num ${d.cpc > 2 ? 'bad' : d.cpc > 1.5 ? 'warn' : 'good'}">${fmt(d.cpc)}</td></tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-sub">CPC vs Quality Score <span class="tag tag-real">REAL</span></div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card-title">QS 越高 → CPC 是否越低？</div>
+        <div class="chart-box"><canvas id="chart-cpc-qs"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">各 QS 分段平均 CPC</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>QS</th><th class="num">关键词数</th><th class="num">Avg CPC</th><th>评估</th></tr></thead>
+            <tbody>
+              ${Object.entries(avgCpcByQs).sort((a,b) => a[0]-b[0]).map(([qs, d]) => `
+                <tr><td>${qs}</td><td class="num">${d.count}</td><td class="num">${fmt(d.total/d.count)}</td><td>${parseInt(qs) >= 8 ? '<span class="good">优</span>' : parseInt(qs) >= 6 ? '<span class="warn">中</span>' : '<span class="bad">差</span>'}</td></tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-sub">CPC 最贵的关键词 Top 20 <span class="tag tag-real">REAL</span></div>
+    <div class="card">
+      <div class="scroll-table table-wrap">
+        <table>
+          <thead><tr><th>关键词</th><th>Campaign</th><th class="num">CPC</th><th class="num">Clicks</th><th class="num">Cost</th><th class="num">QS</th><th>Expected CTR</th><th>Ad Relevance</th></tr></thead>
+          <tbody>
+            ${topExpensive.slice(0,20).map(k => `
+              <tr>
+                <td>${k.keyword}</td><td>${k.campaign}</td>
+                <td class="num bad">${fmt(k.cpc)}</td>
+                <td class="num">${fmtK(k.clicks)}</td>
+                <td class="num">${fmtK(Math.round(k.cost||0))}</td>
+                <td class="num">${k.qualityScore||'--'}</td>
+                <td>${k.expectedCTR||'--'}</td>
+                <td>${k.adRelevance||'--'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  const cLabels = Object.keys(cpcByCamp);
+  new Chart(document.getElementById('chart-cpc-camp'), {
+    type: 'bar',
+    data: {
+      labels: cLabels,
+      datasets: [{ label: 'Avg CPC (HKD)', data: cLabels.map(c => cpcByCamp[c].cpc), backgroundColor: cLabels.map(c => cpcByCamp[c].cpc > 2 ? '#ef4444' : cpcByCamp[c].cpc > 1.5 ? '#f59e0b' : '#22c55e') }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#9da1b4' }, grid: { color: '#2a2e3e' } }, y: { ticks: { color: '#9da1b4', font: { size: 10 } } } } }
+  });
+
+  const qsLabels = Object.keys(avgCpcByQs).sort((a,b) => a-b);
+  new Chart(document.getElementById('chart-cpc-qs'), {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        label: 'CPC by QS',
+        data: qsCpcData.map(d => ({ x: d.qs, y: d.cpc })),
+        backgroundColor: 'rgba(99,102,241,0.5)',
+        pointRadius: 4
+      }, {
+        label: 'Avg CPC',
+        type: 'line',
+        data: qsLabels.map(qs => ({ x: parseInt(qs), y: avgCpcByQs[qs].total / avgCpcByQs[qs].count })),
+        borderColor: '#ef4444',
+        pointRadius: 6,
+        pointBackgroundColor: '#ef4444',
+        fill: false
+      }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#9da1b4' } } }, scales: { x: { title: { display: true, text: 'Quality Score', color: '#9da1b4' }, ticks: { color: '#9da1b4' }, grid: { color: '#2a2e3e' } }, y: { title: { display: true, text: 'CPC (HKD)', color: '#9da1b4' }, ticks: { color: '#9da1b4' }, grid: { color: '#2a2e3e' } } } }
+  });
+}
+
+// =============================================
+// TAB 5: Click → Conversion
+// =============================================
+function renderClickConv() {
+  const el = document.getElementById('sec-click-conv');
+
+  const convByCamp = {};
+  Object.entries(ALL_KEYWORDS).forEach(([camp, kws]) => {
+    const totClicks = kws.reduce((s,k) => s + (k.clicks||0), 0);
+    const totConv = kws.reduce((s,k) => s + (k.purchaseNew||0), 0);
+    const totCost = kws.reduce((s,k) => s + (k.cost||0), 0);
+    convByCamp[camp] = { clicks: totClicks, conv: totConv, cost: totCost, cvr: totClicks ? totConv/totClicks*100 : 0, cpa: totConv ? totCost/totConv : 0 };
+  });
+
+  const iosSummary = SEARCH_CAMPAIGNS.map(c => {
+    const iosR = c.newIOS / (c.newAndroid + c.newIOS) * 100;
+    const estAndroidSpend = c.spend * (c.newAndroid / c.newUsers);
+    const iosCPA = c.newIOS > 0 ? c.spend / c.newIOS : 0;
+    return { ...c, iosRatio: iosR, estAndroidSpend, iosCPA, kwType: getKeywordType(c) };
+  });
+
+  const landingPages = typeof ADW_PU_IN_EMERALD_LANDING_PAGES !== 'undefined' ? ADW_PU_IN_EMERALD_LANDING_PAGES : [];
+
+  el.innerHTML = `
+    <div class="section-title">Click → Conversion</div>
+    <p style="color:var(--text2);margin-bottom:16px;font-size:13px">点击如何变为注册/付费：CVR、CPA、iOS 转化质量</p>
+
+    <div class="section-sub">CVR & CPA 按 Campaign <span class="tag tag-real">REAL</span></div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card-title">CVR（付费转化率）对比</div>
+        <div class="chart-box chart-box-sm"><canvas id="chart-cvr-camp"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">明细表</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Campaign</th><th class="num">Clicks</th><th class="num">Conversions</th><th class="num">CVR</th><th class="num">CPA</th></tr></thead>
+            <tbody>
+              ${Object.entries(convByCamp).sort((a,b) => b[1].cvr - a[1].cvr).map(([camp, d]) => `
+                <tr><td>${camp}</td><td class="num">${fmtK(d.clicks)}</td><td class="num">${fmt(d.conv,0)}</td><td class="num">${fmt(d.cvr,2)}%</td><td class="num">${fmt(d.cpa)}</td></tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-sub">iOS 转化质量（核心问题）<span class="tag tag-real">REAL</span></div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title" style="color:var(--red);font-size:14px">Android 浪费诊断</div>
+      <div class="scroll-table table-wrap">
+        <table>
+          <thead><tr>
+            <th>Campaign</th><th>市场</th><th>词类</th>
+            <th class="num">总 Spend</th><th class="num">Android 用户</th><th class="num">iOS 用户</th><th class="num">iOS 占比</th>
+            <th class="num">估算 Android 浪费</th><th class="num">实际 iOS CPA</th>
+            <th class="num">Android 付费率</th><th class="num">iOS 付费率</th>
+          </tr></thead>
+          <tbody>
+            ${iosSummary.sort((a,b) => b.estAndroidSpend - a.estAndroidSpend).map(c => `
+              <tr class="${c.iosRatio < 60 ? 'highlight-row' : ''}">
+                <td>${c.product}-${c.country}</td><td>${c.country}</td>
+                <td><span class="badge badge-mid">${c.kwType}</span></td>
+                <td class="num">${fmtK(Math.round(c.spend))}</td>
+                <td class="num bad">${fmtK(c.newAndroid)}</td>
+                <td class="num good">${fmtK(c.newIOS)}</td>
+                <td class="num ${c.iosRatio > 80 ? 'good' : c.iosRatio > 50 ? 'warn' : 'bad'}">${fmt(c.iosRatio,0)}%</td>
+                <td class="num bad">${fmtK(Math.round(c.estAndroidSpend))} HKD</td>
+                <td class="num">${fmt(c.iosCPA)}</td>
+                <td class="num">${c.androidPayRate}</td>
+                <td class="num good">${c.iosPayRate}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="grid g2">
+      <div class="card">
+        <div class="card-title">iOS 占比 vs 市场</div>
+        <div class="chart-box"><canvas id="chart-ios-ratio"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Spend 浪费构成</div>
+        <div class="chart-box"><canvas id="chart-waste"></canvas></div>
+      </div>
+    </div>
+
+    ${landingPages.length > 0 ? `
+    <div class="section-sub">落地页表现 (Pu-IN-Emerald) <span class="tag tag-real">REAL</span></div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>落地页</th><th class="num">点击</th><th class="num">展示</th><th class="num">CTR</th><th class="num">CPC</th><th class="num">花费</th><th class="num">转化</th><th class="num">CVR</th><th class="num">CPA</th></tr></thead>
+          <tbody>
+            ${landingPages.map(lp => `
+              <tr>
+                <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis" title="${lp.fullUrl}">${lp.page}</td>
+                <td class="num">${fmtK(lp.clicks)}</td><td class="num">${fmtK(lp.impressions)}</td>
+                <td class="num">${lp.ctr}</td><td class="num">${fmt(lp.cpc)}</td>
+                <td class="num">${fmtK(Math.round(lp.cost))}</td>
+                <td class="num">${fmt(lp.conversions,1)}</td><td class="num">${lp.convRate}</td><td class="num">${fmt(lp.cpa)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>` : ''}
+  `;
+
+  const cvLabels = Object.keys(convByCamp);
+  new Chart(document.getElementById('chart-cvr-camp'), {
+    type: 'bar',
+    data: {
+      labels: cvLabels,
+      datasets: [{ label: 'CVR %', data: cvLabels.map(c => convByCamp[c].cvr), backgroundColor: '#6366f1' }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#9da1b4' }, grid: { color: '#2a2e3e' } }, y: { ticks: { color: '#9da1b4', font: { size: 10 } } } } }
+  });
+
+  const ioLabels = iosSummary.map(c => c.product+'-'+c.country+'-'+c.kwType);
+  new Chart(document.getElementById('chart-ios-ratio'), {
+    type: 'bar',
+    data: {
+      labels: ioLabels,
+      datasets: [
+        { label: 'iOS %', data: iosSummary.map(c => c.iosRatio), backgroundColor: '#3b82f6' },
+        { label: 'Android %', data: iosSummary.map(c => 100 - c.iosRatio), backgroundColor: '#ef4444' }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#9da1b4' } } }, scales: { x: { stacked: true, ticks: { color: '#9da1b4', font: { size: 9 } } }, y: { stacked: true, max: 100, ticks: { color: '#9da1b4' }, grid: { color: '#2a2e3e' } } } }
+  });
+
+  const totalWaste = iosSummary.reduce((s,c) => s + c.estAndroidSpend, 0);
+  const totalEffective = iosSummary.reduce((s,c) => s + c.spend, 0) - totalWaste;
+  new Chart(document.getElementById('chart-waste'), {
+    type: 'doughnut',
+    data: {
+      labels: ['有效 Spend (iOS)', '浪费 Spend (Android)'],
+      datasets: [{ data: [totalEffective, totalWaste], backgroundColor: ['#22c55e', '#ef4444'] }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#9da1b4' } } } }
+  });
+}
+
+// =============================================
+// TAB 6: Search Terms
+// =============================================
+function renderSearchTerms() {
+  const el = document.getElementById('sec-search-terms');
+
+  let allTerms = [];
+  Object.entries(ALL_SEARCH_TERMS).forEach(([camp, terms]) => {
+    terms.forEach(t => allTerms.push({...t, campaign: camp}));
+  });
+
+  const termsWithCost = allTerms.filter(t => t.cost > 0 || t.clicks > 0);
+  const topPerformers = termsWithCost.filter(t => t.purchaseNew > 0).sort((a,b) => b.purchaseNew - a.purchaseNew);
+  const zeroConv = termsWithCost.filter(t => (t.purchaseNew === 0 || !t.purchaseNew) && t.cost > 0).sort((a,b) => b.cost - a.cost);
+
+  const highValueLowCost = termsWithCost.filter(t => t.purchaseNew > 2 && t.cost > 0).map(t => ({...t, efficiency: t.purchaseNewValue / t.cost})).sort((a,b) => b.efficiency - a.efficiency);
+
+  el.innerHTML = `
+    <div class="section-title">搜索词分析</div>
+    <p style="color:var(--text2);margin-bottom:16px;font-size:13px">实际搜索词表现：哪些词赚钱、哪些词浪费、搜索词精准度</p>
+
+    <div class="grid g3" style="margin-bottom:16px">
+      <div class="card kpi">
+        <div class="card-title">有数据的搜索词</div>
+        <div class="kpi-value kpi-accent">${termsWithCost.length}</div>
+      </div>
+      <div class="card kpi">
+        <div class="card-title">有转化的搜索词</div>
+        <div class="kpi-value kpi-green">${topPerformers.length}</div>
+        <div class="kpi-sub">${fmt(topPerformers.length/termsWithCost.length*100,0)}% 精准度</div>
+      </div>
+      <div class="card kpi">
+        <div class="card-title">0 转化但花了钱的词</div>
+        <div class="kpi-value kpi-red">${zeroConv.length}</div>
+        <div class="kpi-sub">浪费 ${fmtK(Math.round(zeroConv.reduce((s,t) => s + t.cost, 0)))} HKD</div>
+      </div>
+    </div>
+
+    <div class="section-sub">效率最高的搜索词 (ROAS) <span class="tag tag-real">REAL</span></div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="scroll-table table-wrap" style="max-height:400px">
+        <table>
+          <thead><tr><th>搜索词</th><th>Campaign</th><th>匹配</th><th class="num">新付费</th><th class="num">付费金额</th><th class="num">花费</th><th class="num">ROAS</th><th class="num">Clicks</th></tr></thead>
+          <tbody>
+            ${highValueLowCost.slice(0,30).map(t => `
+              <tr>
+                <td>${t.term}</td><td>${t.campaign}</td><td>${t.matchType}</td>
+                <td class="num">${fmt(t.purchaseNew,1)}</td>
+                <td class="num">${fmt(t.purchaseNewValue,0)}</td>
+                <td class="num">${fmt(t.cost,0)}</td>
+                <td class="num good">${t.cost > 0 ? fmt(t.purchaseNewValue/t.cost) : '--'}</td>
+                <td class="num">${t.clicks}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-sub">转化量最高的搜索词 Top 30 <span class="tag tag-real">REAL</span></div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="scroll-table table-wrap" style="max-height:400px">
+        <table>
+          <thead><tr><th>搜索词</th><th>Campaign</th><th>匹配</th><th class="num">新付费</th><th class="num">付费金额</th><th class="num">Clicks</th><th class="num">First Visit</th></tr></thead>
+          <tbody>
+            ${topPerformers.slice(0,30).map(t => `
+              <tr>
+                <td>${t.term}</td><td>${t.campaign}</td><td>${t.matchType}</td>
+                <td class="num good">${fmt(t.purchaseNew,1)}</td>
+                <td class="num">${fmt(t.purchaseNewValue||0, 0)}</td>
+                <td class="num">${t.clicks||0}</td>
+                <td class="num">${t.firstVisit||'--'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-sub" style="color:var(--red)">浪费最多的搜索词（有花费 0 转化）Top 30 <span class="tag tag-real">REAL</span></div>
+    <div class="card">
+      <div class="scroll-table table-wrap" style="max-height:400px">
+        <table>
+          <thead><tr><th>搜索词</th><th>Campaign</th><th>匹配</th><th class="num">花费</th><th class="num">Clicks</th><th class="num">转化</th><th>建议</th></tr></thead>
+          <tbody>
+            ${zeroConv.slice(0,30).map(t => `
+              <tr>
+                <td>${t.term}</td><td>${t.campaign}</td><td>${t.matchType}</td>
+                <td class="num bad">${fmt(t.cost)}</td>
+                <td class="num">${t.clicks}</td>
+                <td class="num bad">0</td>
+                <td><span class="badge badge-low">考虑否定</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+// =============================================
+// TAB 7: Geo Analysis
+// =============================================
+function renderGeo() {
+  const el = document.getElementById('sec-geo');
+  const geoData = typeof ADW_PU_IN_GEO !== 'undefined' ? ADW_PU_IN_GEO : [];
+  const totalCost = geoData.reduce((s,g) => s + g.cost, 0);
+  const totalClicks = geoData.reduce((s,g) => s + g.clicks, 0);
+  const totalConv = geoData.reduce((s,g) => s + g.conversions, 0);
+
+  el.innerHTML = `
+    <div class="section-title">地理分析 (Pu-IN-Display 参考) <span class="tag tag-real">REAL</span></div>
+    <p style="color:var(--text2);margin-bottom:16px;font-size:13px">印度各邦表现：用于指导 Search 广告的地区出价调整策略（iOS 用户密度高的邦应加大投入）</p>
+
+    <div class="grid g4" style="margin-bottom:16px">
+      <div class="card kpi"><div class="card-title">覆盖地区数</div><div class="kpi-value">${geoData.length}</div></div>
+      <div class="card kpi"><div class="card-title">总花费</div><div class="kpi-value">${fmtK(Math.round(totalCost))}</div></div>
+      <div class="card kpi"><div class="card-title">总点击</div><div class="kpi-value">${fmtK(totalClicks)}</div></div>
+      <div class="card kpi"><div class="card-title">总转化</div><div class="kpi-value">${totalConv}</div></div>
+    </div>
+
+    <div class="grid g2">
+      <div class="card">
+        <div class="card-title">花费 Top 15 地区</div>
+        <div class="chart-box"><canvas id="chart-geo-cost"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">CPA 对比（有转化的地区）</div>
+        <div class="chart-box"><canvas id="chart-geo-cpa"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">全部地区详情</div>
+      <div class="scroll-table table-wrap" style="max-height:500px">
+        <table>
+          <thead><tr><th>地区</th><th class="num">花费</th><th class="num">花费占比</th><th class="num">点击</th><th class="num">展示</th><th class="num">CTR</th><th class="num">CPC</th><th class="num">转化</th><th class="num">CVR</th><th class="num">CPA</th><th>效率评级</th></tr></thead>
+          <tbody>
+            ${geoData.sort((a,b) => b.cost - a.cost).map(g => {
+              const eff = g.conversions > 0 ? (g.cpa < 100 ? 'good' : g.cpa < 150 ? 'warn' : 'bad') : 'bad';
+              return `<tr>
+                <td>${g.region}</td>
+                <td class="num">${fmtK(Math.round(g.cost))}</td>
+                <td class="num">${fmt(g.cost/totalCost*100,1)}%</td>
+                <td class="num">${fmtK(g.clicks)}</td>
+                <td class="num">${fmtK(g.impressions)}</td>
+                <td class="num">${g.ctr}</td>
+                <td class="num">${fmt(g.cpc)}</td>
+                <td class="num">${g.conversions}</td>
+                <td class="num">${g.convRate}</td>
+                <td class="num ${eff}">${g.cpa > 0 ? fmt(g.cpa) : '--'}</td>
+                <td><span class="badge ${eff === 'good' ? 'badge-high' : eff === 'warn' ? 'badge-mid' : 'badge-low'}">${eff === 'good' ? '高效' : eff === 'warn' ? '一般' : '低效'}</span></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  const top15 = geoData.sort((a,b) => b.cost - a.cost).slice(0, 15);
+  new Chart(document.getElementById('chart-geo-cost'), {
+    type: 'bar',
+    data: {
+      labels: top15.map(g => g.region.replace(', 印度', '')),
+      datasets: [{ label: '花费 (HKD)', data: top15.map(g => g.cost), backgroundColor: '#6366f1' }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#9da1b4' }, grid: { color: '#2a2e3e' } }, y: { ticks: { color: '#9da1b4', font: { size: 10 } } } } }
+  });
+
+  const withConv = geoData.filter(g => g.conversions > 0).sort((a,b) => a.cpa - b.cpa);
+  new Chart(document.getElementById('chart-geo-cpa'), {
+    type: 'bar',
+    data: {
+      labels: withConv.map(g => g.region.replace(', 印度', '')),
+      datasets: [{ label: 'CPA (HKD)', data: withConv.map(g => g.cpa), backgroundColor: withConv.map(g => g.cpa < 100 ? '#22c55e' : g.cpa < 150 ? '#f59e0b' : '#ef4444') }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#9da1b4' }, grid: { color: '#2a2e3e' } }, y: { ticks: { color: '#9da1b4', font: { size: 10 } } } } }
+  });
+}
+
+// =============================================
+// TAB 8: Schedule Analysis
+// =============================================
+function renderSchedule() {
+  const el = document.getElementById('sec-schedule');
+  const schedule = typeof ADW_PPT_UK_SCHEDULE !== 'undefined' ? ADW_PPT_UK_SCHEDULE : [];
+
+  const dayMap = {};
+  schedule.forEach(s => {
+    if (!dayMap[s.day]) dayMap[s.day] = { clicks: 0, cost: 0, conv: 0, imp: 0 };
+    dayMap[s.day].clicks += s.clicks;
+    dayMap[s.day].cost += s.cost;
+    dayMap[s.day].conv += s.conversions;
+    dayMap[s.day].imp += s.impressions;
+  });
+
+  const hourMap = {};
+  schedule.forEach(s => {
+    if (!hourMap[s.hour]) hourMap[s.hour] = { clicks: 0, cost: 0, conv: 0, imp: 0 };
+    hourMap[s.hour].clicks += s.clicks;
+    hourMap[s.hour].cost += s.cost;
+    hourMap[s.hour].conv += s.conversions;
+    hourMap[s.hour].imp += s.impressions;
+  });
+
+  const hours = Object.keys(hourMap).sort((a,b) => a-b);
+
+  el.innerHTML = `
+    <div class="section-title">时段分析 (Ppt-UK) <span class="tag tag-real">REAL</span></div>
+    <p style="color:var(--text2);margin-bottom:16px;font-size:13px">投放时段表现：识别高效和低效时段，用于时段出价调整</p>
+
+    <div class="section-sub">按小时花费 & CPC</div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card-title">各时段花费分布</div>
+        <div class="chart-box"><canvas id="chart-hour-cost"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">各时段 CPC & CVR</div>
+        <div class="chart-box"><canvas id="chart-hour-cpc"></canvas></div>
+      </div>
+    </div>
+
+    <div class="section-sub">按星期分析</div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>星期</th><th class="num">花费</th><th class="num">点击</th><th class="num">展示</th><th class="num">CTR</th><th class="num">CPC</th><th class="num">转化</th><th class="num">CVR</th><th class="num">CPA</th></tr></thead>
+          <tbody>
+            ${Object.entries(dayMap).map(([day, d]) => `
+              <tr>
+                <td>${day}</td><td class="num">${fmtK(Math.round(d.cost))}</td>
+                <td class="num">${fmtK(d.clicks)}</td><td class="num">${fmtK(d.imp)}</td>
+                <td class="num">${fmt(d.clicks/d.imp*100,1)}%</td>
+                <td class="num">${fmt(d.cost/d.clicks)}</td>
+                <td class="num">${fmt(d.conv,0)}</td>
+                <td class="num">${fmt(d.conv/d.clicks*100,2)}%</td>
+                <td class="num">${d.conv > 0 ? fmt(d.cost/d.conv) : '--'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-sub">时段热力图（按小时详情）</div>
+    <div class="card">
+      <div class="scroll-table table-wrap" style="max-height:500px">
+        <table>
+          <thead><tr><th>星期</th><th>时段</th><th class="num">花费</th><th class="num">点击</th><th class="num">CPC</th><th class="num">转化</th><th class="num">CPA</th></tr></thead>
+          <tbody>
+            ${schedule.sort((a,b) => b.cost - a.cost).slice(0, 50).map(s => `
+              <tr>
+                <td>${s.day}</td><td>${s.hour}:00</td>
+                <td class="num">${fmt(s.cost)}</td>
+                <td class="num">${s.clicks}</td>
+                <td class="num">${fmt(s.cpc)}</td>
+                <td class="num">${fmt(s.conversions,1)}</td>
+                <td class="num ${s.conversions > 0 && s.cost/s.conversions < 50 ? 'good' : 'warn'}">${s.conversions > 0 ? fmt(s.cost/s.conversions) : '--'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  new Chart(document.getElementById('chart-hour-cost'), {
+    type: 'bar',
+    data: {
+      labels: hours.map(h => h + ':00'),
+      datasets: [{ label: '花费', data: hours.map(h => hourMap[h].cost), backgroundColor: '#6366f1' }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#9da1b4' } }, y: { ticks: { color: '#9da1b4' }, grid: { color: '#2a2e3e' } } } }
+  });
+
+  new Chart(document.getElementById('chart-hour-cpc'), {
+    type: 'line',
+    data: {
+      labels: hours.map(h => h + ':00'),
+      datasets: [
+        { label: 'CPC', data: hours.map(h => hourMap[h].clicks ? hourMap[h].cost/hourMap[h].clicks : 0), borderColor: '#ef4444', fill: false, yAxisID: 'y' },
+        { label: 'CVR %', data: hours.map(h => hourMap[h].clicks ? hourMap[h].conv/hourMap[h].clicks*100 : 0), borderColor: '#22c55e', fill: false, yAxisID: 'y1' }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#9da1b4' } } },
+      scales: {
+        x: { ticks: { color: '#9da1b4' } },
+        y: { position: 'left', title: { display: true, text: 'CPC', color: '#9da1b4' }, ticks: { color: '#9da1b4' }, grid: { color: '#2a2e3e' } },
+        y1: { position: 'right', title: { display: true, text: 'CVR %', color: '#9da1b4' }, ticks: { color: '#9da1b4' }, grid: { display: false } }
+      }
+    }
+  });
+}
+
+// =============================================
+// INITIALIZE
+// =============================================
+renderOverview();
+renderBudgetImp();
+renderImpClick();
+renderCPC();
+renderClickConv();
+renderSearchTerms();
+renderGeo();
+renderSchedule();
+</script>
+</body>
+</html>

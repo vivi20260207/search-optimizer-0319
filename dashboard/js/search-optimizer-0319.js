@@ -2524,30 +2524,298 @@ renderGender();
 renderAge();
 renderAdPolicy();
 renderChangeLog();
-renderNegativeKeywords();
+renderNegKWCenter();
 
 // ═══════════════════════════════════════
-// NEGATIVE KEYWORDS INVENTORY
+// NEGATIVE KEYWORD DIAGNOSTIC CENTER
 // ═══════════════════════════════════════
-function renderNegativeKeywords() {
+function renderNegKWCenter() {
   const NEG_KW = (typeof ADW_NEGATIVE_KEYWORDS !== 'undefined') ? ADW_NEGATIVE_KEYWORDS : [];
   if (NEG_KW.length === 0) return;
 
-  U.el('negkw-count-badge').textContent = NEG_KW.length + ' 个';
+  // ── Intent Classification Engine ──
+  const INTENT_RULES = [
+    { id: 'free',     label: '🆓 白嫖/免费词',   color: '#ef4444', words: ['free','gratis','no coin','no money','without pay','muft','gratuit','مجان'] },
+    { id: 'adult',    label: '🔞 色情/违规词',    color: '#dc2626', words: ['porn','sex','nude','naked','xxx','hot girl','sexy','adult video','18+','nsfw'] },
+    { id: 'comp',     label: '🏷️ 竞品品牌词',     color: '#f59e0b', words: ['omegle','chatroulette','monkey app','livu','fachat','chamet','holla','emeraldchat','ome tv','ometv','tinychat','chaturbate','chathub','camsurf','shagle','bazoocam','dirtyroulette','parau','paru','vanachat','zee chat','flirtify','funchat'] },
+    { id: 'platform', label: '📱 无关平台/App',    color: '#8b5cf6', words: ['discord','telegram','whatsapp','skype','zoom','instagram','tiktok','snapchat','facebook','messenger','wechat'] },
+    { id: 'norel',    label: '🚫 无关功能/意图',   color: '#6b7280', words: ['group chat','voice only','text chat','text only','dating','marriage','download','apk','mod','crack','hack','review','tutorial','login','sign up'] },
+    { id: 'geo',      label: '🌍 地区/语言限定',   color: '#0ea5e9', words: [] },
+  ];
 
-  const campFilter = U.el('negkw-filter-camp');
+  function classifyIntent(kw) {
+    const lower = kw.toLowerCase();
+    for (const rule of INTENT_RULES) {
+      if (rule.words.some(w => lower.includes(w))) return rule;
+    }
+    return { id: 'other', label: '❓ 其他/通用', color: '#94a3b8' };
+  }
+
+  // ── Enrich each neg kw with intent + diagnostics ──
+  const posKwSet = new Set();
+  FLAT_KW.forEach(k => {
+    if (k.keyword) posKwSet.add(k.keyword.toLowerCase().trim());
+  });
+
+  const negByCamp = {};
+  const negByKw = {};
+
+  NEG_KW.forEach(e => {
+    e._intent = classifyIntent(e.keyword);
+    e._diags = [];
+    const kLower = e.keyword.toLowerCase().trim();
+
+    if (!negByCamp[e.campaign]) negByCamp[e.campaign] = [];
+    negByCamp[e.campaign].push(e);
+
+    if (!negByKw[kLower]) negByKw[kLower] = [];
+    negByKw[kLower].push(e);
+
+    // Diag: positive-negative conflict
+    if (posKwSet.has(kLower)) {
+      const conflicting = FLAT_KW.filter(k => k.keyword && k.keyword.toLowerCase().trim() === kLower);
+      e._diags.push({
+        type: 'conflict',
+        icon: '⚠️',
+        label: '正负冲突',
+        detail: `同时作为正向关键词存在于: ${conflicting.map(k => U.campShortName(k._camp || k.campaign)).join(', ')}`
+      });
+    }
+
+    // Diag: single-word broad match (overly broad)
+    if (e.matchType === '广泛匹配' && !kLower.includes(' ') && kLower.length <= 8) {
+      e._diags.push({
+        type: 'too-broad',
+        icon: '💥',
+        label: '匹配过宽',
+        detail: `单词"${e.keyword}"使用广泛否定，可能误杀大量有效流量`
+      });
+    }
+  });
+
+  // Diag: cross-campaign duplicates (AG-level same keyword in multiple AGs)
+  Object.entries(negByKw).forEach(([kw, entries]) => {
+    const agEntries = entries.filter(e => e.level === '广告组');
+    if (agEntries.length >= 3) {
+      agEntries.forEach(e => {
+        if (!e._diags.some(d => d.type === 'duplicate')) {
+          e._diags.push({
+            type: 'duplicate',
+            icon: '🔄',
+            label: '跨组重复',
+            detail: `"${e.keyword}" 在 ${agEntries.length} 个广告组中重复否定，建议提升至 Campaign 级`
+          });
+        }
+      });
+    }
+  });
+
+  // Diag: gap detection - neg in one campaign of a product but not in another
+  const productCamps = {};
+  Object.keys(negByCamp).forEach(camp => {
+    const meta = U.parseCampMeta ? U.parseCampMeta(camp) : {};
+    const product = meta.product || camp.split('-')[0];
+    if (!productCamps[product]) productCamps[product] = [];
+    productCamps[product].push(camp);
+  });
+
+  const gapAlerts = [];
+  Object.entries(productCamps).forEach(([product, camps]) => {
+    if (camps.length < 2) return;
+    const campNegSets = {};
+    camps.forEach(c => {
+      campNegSets[c] = new Set((negByCamp[c] || []).filter(e => e.level === 'Campaign').map(e => e.keyword.toLowerCase()));
+    });
+    camps.forEach(c1 => {
+      campNegSets[c1].forEach(kw => {
+        camps.forEach(c2 => {
+          if (c1 !== c2 && !campNegSets[c2].has(kw)) {
+            const stData = ST_MAP[c2] || [];
+            const spending = stData.filter(st => st.term && st.term.toLowerCase().includes(kw));
+            const totalSpend = spending.reduce((s, st) => s + (st.cost || 0), 0);
+            if (totalSpend > 5) {
+              gapAlerts.push({
+                keyword: kw,
+                negatedIn: c1,
+                missingIn: c2,
+                product,
+                spend: totalSpend,
+                convs: spending.reduce((s, st) => s + (st.conversions || 0), 0)
+              });
+            }
+          }
+        });
+      });
+    });
+  });
+
+  // ── KPI Cards ──
+  const campLevel = NEG_KW.filter(e => e.level === 'Campaign').length;
+  const agLevel = NEG_KW.filter(e => e.level === '广告组').length;
+  const conflictCount = NEG_KW.filter(e => e._diags.some(d => d.type === 'conflict')).length;
+  const broadCount = NEG_KW.filter(e => e._diags.some(d => d.type === 'too-broad')).length;
+  const dupCount = NEG_KW.filter(e => e._diags.some(d => d.type === 'duplicate')).length;
+  const issueCount = conflictCount + broadCount + gapAlerts.length;
+
+  U.el('nav-negkw-count').textContent = issueCount > 0 ? issueCount : NEG_KW.length;
+
+  U.html('negkw-kpis', `
+    <div class="kpi-card"><div class="kpi-label">否定词总数</div><div class="kpi-value">${NEG_KW.length}</div><div class="kpi-sub">Campaign ${campLevel} + 广告组 ${agLevel}</div></div>
+    <div class="kpi-card"><div class="kpi-label">⚠️ 正负冲突</div><div class="kpi-value ${conflictCount ? 'clr-bad' : 'clr-good'}">${conflictCount}</div><div class="kpi-sub">同时作为正向关键词</div></div>
+    <div class="kpi-card"><div class="kpi-label">🕳️ 漏网之鱼</div><div class="kpi-value ${gapAlerts.length ? 'clr-warn' : 'clr-good'}">${gapAlerts.length}</div><div class="kpi-sub">否定了A但B还在花钱</div></div>
+    <div class="kpi-card"><div class="kpi-label">💥 匹配过宽</div><div class="kpi-value ${broadCount ? 'clr-warn' : 'clr-good'}">${broadCount}</div><div class="kpi-sub">单词广泛否定</div></div>
+    <div class="kpi-card"><div class="kpi-label">🔄 跨组重复</div><div class="kpi-value ${dupCount ? 'clr-warn' : 'clr-good'}">${dupCount}</div><div class="kpi-sub">建议提升至Campaign级</div></div>
+  `);
+
+  // ── Diagnostic Cards ──
+  let diagHtml = '';
+
+  // Conflict card
+  const conflicts = NEG_KW.filter(e => e._diags.some(d => d.type === 'conflict'));
+  diagHtml += `<div class="card"><div class="card-header"><h3>⚠️ 正负冲突检测 (${conflicts.length})</h3></div><div class="card-body" style="max-height:280px;overflow-y:auto;font-size:13px;">`;
+  if (conflicts.length === 0) {
+    diagHtml += '<div class="muted" style="padding:20px;text-align:center;">✅ 未发现正负冲突</div>';
+  } else {
+    conflicts.forEach(e => {
+      const d = e._diags.find(d => d.type === 'conflict');
+      diagHtml += `<div style="padding:6px 0;border-bottom:1px solid #f1f5f9;">
+        <span class="badge badge-bad" style="font-size:10px;">${e.matchType}</span>
+        <strong>${e.keyword}</strong>
+        <span class="muted" style="font-size:11px;"> — 否定于 ${U.campShortName(e.campaign)}</span>
+        <div class="muted" style="font-size:11px;margin-top:2px;">${d.detail}</div>
+      </div>`;
+    });
+  }
+  diagHtml += '</div></div>';
+
+  // Gap card
+  diagHtml += `<div class="card"><div class="card-header"><h3>🕳️ 漏网之鱼检测 (${gapAlerts.length})</h3></div><div class="card-body" style="max-height:280px;overflow-y:auto;font-size:13px;">`;
+  if (gapAlerts.length === 0) {
+    diagHtml += '<div class="muted" style="padding:20px;text-align:center;">✅ 未发现跨Campaign遗漏</div>';
+  } else {
+    gapAlerts.sort((a, b) => b.spend - a.spend).slice(0, 30).forEach(g => {
+      diagHtml += `<div style="padding:6px 0;border-bottom:1px solid #f1f5f9;">
+        <strong>"${g.keyword}"</strong> 在 <span class="badge badge-good" style="font-size:10px;">${U.campShortName(g.negatedIn)}</span> 已否定
+        <br><span class="clr-bad">但在 <strong>${U.campShortName(g.missingIn)}</strong> 仍花费 $${U.fmt(g.spend)}</span>
+        ${g.convs > 0 ? `<span class="clr-warn"> (${g.convs} 转化，需确认是否误杀)</span>` : '<span class="muted"> (0 转化，建议也否定)</span>'}
+      </div>`;
+    });
+  }
+  diagHtml += '</div></div>';
+
+  // Match type warnings card
+  const broadAlerts = NEG_KW.filter(e => e._diags.some(d => d.type === 'too-broad'));
+  diagHtml += `<div class="card"><div class="card-header"><h3>💥 匹配类型风险 (${broadAlerts.length})</h3></div><div class="card-body" style="max-height:280px;overflow-y:auto;font-size:13px;">`;
+  if (broadAlerts.length === 0) {
+    diagHtml += '<div class="muted" style="padding:20px;text-align:center;">✅ 未发现匹配类型风险</div>';
+  } else {
+    broadAlerts.forEach(e => {
+      const d = e._diags.find(d => d.type === 'too-broad');
+      diagHtml += `<div style="padding:6px 0;border-bottom:1px solid #f1f5f9;">
+        <span class="badge badge-warn" style="font-size:10px;">广泛</span>
+        <strong>${e.keyword}</strong>
+        <span class="muted" style="font-size:11px;"> — ${U.campShortName(e.campaign)}</span>
+        <div class="muted" style="font-size:11px;margin-top:2px;">${d.detail}</div>
+      </div>`;
+    });
+  }
+  diagHtml += '</div></div>';
+
+  // Duplicate/level optimization card
+  const dupAlerts = NEG_KW.filter(e => e._diags.some(d => d.type === 'duplicate'));
+  const dupKws = {};
+  dupAlerts.forEach(e => {
+    const k = e.keyword.toLowerCase();
+    if (!dupKws[k]) dupKws[k] = { keyword: e.keyword, camps: new Set(), count: 0 };
+    dupKws[k].camps.add(U.campShortName(e.campaign));
+    dupKws[k].count++;
+  });
+  const dupList = Object.values(dupKws).sort((a, b) => b.count - a.count);
+
+  diagHtml += `<div class="card"><div class="card-header"><h3>🔄 层级优化建议 (${dupList.length} 词)</h3></div><div class="card-body" style="max-height:280px;overflow-y:auto;font-size:13px;">`;
+  if (dupList.length === 0) {
+    diagHtml += '<div class="muted" style="padding:20px;text-align:center;">✅ 层级使用合理</div>';
+  } else {
+    dupList.slice(0, 20).forEach(d => {
+      diagHtml += `<div style="padding:6px 0;border-bottom:1px solid #f1f5f9;">
+        <strong>"${d.keyword}"</strong> 在 <span class="clr-warn">${d.count} 个广告组</span> 重复否定
+        <div class="muted" style="font-size:11px;margin-top:2px;">涉及: ${[...d.camps].join(', ')} — 建议提升为 Campaign 级否定</div>
+      </div>`;
+    });
+  }
+  diagHtml += '</div></div>';
+
+  U.html('negkw-diagnostics', diagHtml);
+
+  // ── Intent Category Chart ──
+  const intentCounts = {};
+  INTENT_RULES.forEach(r => { intentCounts[r.id] = { ...r, count: 0 }; });
+  intentCounts['other'] = { id: 'other', label: '❓ 其他/通用', color: '#94a3b8', count: 0 };
+
+  NEG_KW.forEach(e => {
+    const cat = e._intent.id;
+    if (intentCounts[cat]) intentCounts[cat].count++;
+  });
+
+  let intentHtml = '';
+  Object.values(intentCounts).filter(c => c.count > 0).sort((a, b) => b.count - a.count).forEach(cat => {
+    const pct = ((cat.count / NEG_KW.length) * 100).toFixed(1);
+    intentHtml += `<div style="flex:1;min-width:180px;padding:14px;border-radius:8px;border:2px solid ${cat.color}20;background:${cat.color}08;cursor:pointer;" class="intent-chip" data-intent="${cat.id}">
+      <div style="font-size:14px;font-weight:600;">${cat.label}</div>
+      <div style="font-size:24px;font-weight:700;color:${cat.color};">${cat.count}</div>
+      <div class="muted" style="font-size:11px;">${pct}%</div>
+    </div>`;
+  });
+  U.html('negkw-intent-chart', intentHtml);
+
+  // intent chip click → filter table
+  document.querySelectorAll('.intent-chip').forEach(el => {
+    el.addEventListener('click', () => {
+      U.el('negkw-c-filter-intent').value = el.dataset.intent;
+      filterTable();
+    });
+  });
+
+  // ── Populate filters ──
+  const campFilter = U.el('negkw-c-filter-camp');
   const camps = [...new Set(NEG_KW.map(e => e.campaign).filter(Boolean))].sort();
   campFilter.innerHTML = '<option value="all">全部 Campaign</option>' +
     camps.map(c => `<option value="${c}">${U.campShortName(c)}</option>`).join('');
 
-  function filterNegKW() {
-    const levelVal = U.el('negkw-filter-level').value;
-    const campVal = U.el('negkw-filter-camp').value;
-    const searchVal = U.el('negkw-search').value.trim().toLowerCase();
+  const intentFilter = U.el('negkw-c-filter-intent');
+  intentFilter.innerHTML = '<option value="all">全部意图分类</option>' +
+    Object.values(intentCounts).filter(c => c.count > 0).sort((a, b) => b.count - a.count)
+      .map(c => `<option value="${c.id}">${c.label} (${c.count})</option>`).join('');
+
+  // ── Table Rendering ──
+  const mtBadge = mt => {
+    if (mt === '完全匹配') return '<span class="badge badge-func">[完全]</span>';
+    if (mt === '词组匹配') return '<span class="badge badge-info">[词组]</span>';
+    if (mt === '广泛匹配') return '<span class="badge badge-warn">[广泛]</span>';
+    return `<span class="badge badge-neutral">${mt}</span>`;
+  };
+
+  const diagBadge = e => {
+    if (e._diags.length === 0) return '<span class="badge badge-good" style="font-size:10px;">✅</span>';
+    return e._diags.map(d => {
+      const cls = d.type === 'conflict' ? 'badge-bad' : d.type === 'too-broad' ? 'badge-warn' : 'badge-neutral';
+      return `<span class="badge ${cls}" style="font-size:10px;" title="${d.detail}">${d.icon}</span>`;
+    }).join(' ');
+  };
+
+  function filterTable() {
+    const levelVal = U.el('negkw-c-filter-level').value;
+    const campVal = U.el('negkw-c-filter-camp').value;
+    const intentVal = U.el('negkw-c-filter-intent').value;
+    const diagVal = U.el('negkw-c-filter-diag').value;
+    const searchVal = U.el('negkw-c-search').value.trim().toLowerCase();
 
     let filtered = NEG_KW;
     if (levelVal !== 'all') filtered = filtered.filter(e => e.level === levelVal);
     if (campVal !== 'all') filtered = filtered.filter(e => e.campaign === campVal);
+    if (intentVal !== 'all') filtered = filtered.filter(e => e._intent.id === intentVal);
+    if (diagVal === 'ok') filtered = filtered.filter(e => e._diags.length === 0);
+    else if (diagVal !== 'all') filtered = filtered.filter(e => e._diags.some(d => d.type === diagVal));
     if (searchVal.length >= 2) {
       filtered = filtered.filter(e =>
         (e.keyword || '').toLowerCase().includes(searchVal) ||
@@ -2556,32 +2824,28 @@ function renderNegativeKeywords() {
       );
     }
 
-    U.el('negkw-count-badge').textContent = filtered.length + ' 个';
-
-    const mtBadge = mt => {
-      if (mt === '完全匹配') return '<span class="badge badge-func">[完全]</span>';
-      if (mt === '词组匹配') return '<span class="badge badge-info">[词组]</span>';
-      if (mt === '广泛匹配') return '<span class="badge badge-warn">[广泛]</span>';
-      return `<span class="badge badge-neutral">${mt}</span>`;
-    };
+    U.el('negkw-table-count').textContent = filtered.length + ' 个';
 
     let html = '';
     filtered.forEach(e => {
       html += `<tr>
+        <td>${diagBadge(e)}</td>
         <td><span class="badge ${e.level === 'Campaign' ? 'badge-search' : 'badge-info'}" style="font-size:10px;">${e.level}</span></td>
         <td class="bold" title="${e.campaign}" style="font-size:12px;">${U.campShortName(e.campaign || '--')}</td>
         <td class="muted" style="font-size:12px;">${e.adGroup || '--'}</td>
         <td style="font-weight:600;">${e.keyword}</td>
         <td>${mtBadge(e.matchType)}</td>
-        <td class="muted">${e.status}</td>
+        <td><span style="font-size:11px;color:${e._intent.color};">${e._intent.label}</span></td>
       </tr>`;
     });
-    if (!html) html = '<tr><td colspan="6" class="muted" style="text-align:center;padding:30px;">无匹配的否定关键词</td></tr>';
-    U.html('negkw-tbody', html);
+    if (!html) html = '<tr><td colspan="7" class="muted" style="text-align:center;padding:30px;">无匹配的否定关键词</td></tr>';
+    U.html('negkw-c-tbody', html);
   }
 
-  filterNegKW();
-  U.el('negkw-filter-level').addEventListener('change', filterNegKW);
-  campFilter.addEventListener('change', filterNegKW);
-  U.el('negkw-search').addEventListener('input', filterNegKW);
+  filterTable();
+  U.el('negkw-c-filter-level').addEventListener('change', filterTable);
+  campFilter.addEventListener('change', filterTable);
+  intentFilter.addEventListener('change', filterTable);
+  U.el('negkw-c-filter-diag').addEventListener('change', filterTable);
+  U.el('negkw-c-search').addEventListener('input', filterTable);
 }

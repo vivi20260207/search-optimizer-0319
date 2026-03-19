@@ -49,6 +49,10 @@
       </li>
 
       <li class="nav-group-label">操作管理</li>
+      <li class="nav-item" data-view="neg-kw-center">
+        <span class="nav-icon">🚫</span> 否定词诊断
+        <span class="nav-badge" id="nav-negkw-count">0</span>
+      </li>
       <li class="nav-item" data-view="change-log">
         <span class="nav-icon">📋</span> 变更日志
         <span class="nav-badge" id="nav-change-count">0</span>
@@ -581,6 +585,67 @@
       </div>
     </section>
 
+    <!-- ═══ VIEW: 否定词诊断中心 ═══ -->
+    <section class="view-section" id="view-neg-kw-center">
+      <div class="page-header">
+        <div>
+          <h2>否定词资产库与诊断</h2>
+          <span class="page-header-meta">全账户否定关键词清单 + 策略健康度诊断</span>
+        </div>
+        <span class="data-tag data-tag-real">REAL DATA</span>
+      </div>
+      <!-- KPI Cards -->
+      <div id="negkw-kpis" class="kpi-grid kpi-grid-5"></div>
+      <!-- Diagnostic Cards -->
+      <div id="negkw-diagnostics" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;"></div>
+      <!-- Intent Categories -->
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header"><h3>📊 否定词意图分类</h3></div>
+        <div class="card-body" id="negkw-intent-chart" style="display:flex;flex-wrap:wrap;gap:12px;"></div>
+      </div>
+      <!-- Full Inventory Table -->
+      <div class="card">
+        <div class="card-header" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <h3 style="margin:0;">📋 完整否定词清单</h3>
+          <span class="badge badge-neutral" id="negkw-table-count">0</span>
+          <select id="negkw-c-filter-level" class="camp-select" style="max-width:140px;">
+            <option value="all">全部级别</option>
+            <option value="Campaign">Campaign 级</option>
+            <option value="广告组">广告组级</option>
+          </select>
+          <select id="negkw-c-filter-camp" class="camp-select" style="max-width:220px;">
+            <option value="all">全部 Campaign</option>
+          </select>
+          <select id="negkw-c-filter-intent" class="camp-select" style="max-width:160px;">
+            <option value="all">全部意图分类</option>
+          </select>
+          <select id="negkw-c-filter-diag" class="camp-select" style="max-width:160px;">
+            <option value="all">全部诊断状态</option>
+            <option value="conflict">⚠️ 正负冲突</option>
+            <option value="gap">🕳️ 漏网之鱼</option>
+            <option value="too-broad">💥 匹配过宽</option>
+            <option value="duplicate">🔄 跨组重复</option>
+            <option value="ok">✅ 正常</option>
+          </select>
+          <input type="text" id="negkw-c-search" class="cluster-search-input" placeholder="搜索否定词..." style="max-width:220px;margin-left:auto;">
+        </div>
+        <div class="card-body-flush table-wrap" style="max-height:calc(100vh - 300px);overflow-y:auto;">
+          <table>
+            <thead><tr>
+              <th style="min-width:60px;">诊断</th>
+              <th>级别</th>
+              <th>Campaign</th>
+              <th>广告组</th>
+              <th>否定关键词</th>
+              <th>匹配类型</th>
+              <th>意图分类</th>
+            </tr></thead>
+            <tbody id="negkw-c-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- ═══ VIEW: 变更日志 ═══ -->
     <section class="view-section" id="view-change-log">
       <div class="page-header">
@@ -644,35 +709,7 @@
         </div>
       </div>
 
-      <!-- Negative Keywords Inventory -->
-      <div class="card" style="margin-top:20px;">
-        <div class="card-header" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-          <h3 style="margin:0;">🚫 否定关键词清单（当前在投）</h3>
-          <span class="badge badge-neutral" id="negkw-count-badge">0</span>
-          <select id="negkw-filter-level" class="camp-select" style="max-width:150px;">
-            <option value="all">全部级别</option>
-            <option value="Campaign">Campaign 级</option>
-            <option value="广告组">广告组级</option>
-          </select>
-          <select id="negkw-filter-camp" class="camp-select" style="max-width:220px;">
-            <option value="all">全部 Campaign</option>
-          </select>
-          <input type="text" id="negkw-search" class="cluster-search-input" placeholder="搜索否定词..." style="max-width:220px;margin-left:auto;">
-        </div>
-        <div class="card-body-flush table-wrap" style="max-height:450px;overflow-y:auto;">
-          <table>
-            <thead><tr>
-              <th>级别</th>
-              <th>Campaign</th>
-              <th>广告组</th>
-              <th>否定关键词</th>
-              <th>匹配类型</th>
-              <th>状态</th>
-            </tr></thead>
-            <tbody id="negkw-tbody"></tbody>
-          </table>
-        </div>
-      </div>
+      <!-- (Negative Keywords moved to dedicated view: neg-kw-center) -->
     </section>
 
   </main>
@@ -687,6 +724,6 @@
 <script src="js/adw_data_negkw.js?v=20260319b"></script>
 <script src="js/utils-0319.js"></script>
 <script src="js/engine-0319.js"></script>
-<script src="js/search-optimizer-0319.js?v=20260319b"></script>
+<script src="js/search-optimizer-0319.js?v=20260319c"></script>
 </body>
 </html>

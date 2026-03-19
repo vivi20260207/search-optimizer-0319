@@ -73,6 +73,30 @@ regAsset('Ft-web-US-2.5-Display-12.26-homepage', typeof ADW_FT_US_ASSETS !== 'un
 regAsset('Ppt-web-2.5-AR+UAE+IL+QA-2.3', typeof ADW_PPT_ME_PMAX_ASSETS !== 'undefined' ? ADW_PPT_ME_PMAX_ASSETS : []);
 regAsset('Ppt-web-US-2.5-Pmax-1.20-homepage', typeof ADW_PPT_US_PMAX_ASSETS !== 'undefined' ? ADW_PPT_US_PMAX_ASSETS : []);
 
+// ─── Auto-discover Asset globals and register into ASSET_MAP ───
+(function autoRegisterAssets() {
+  const globals = Object.keys(window);
+  const assetVars = globals.filter(k => k.includes('ASSETS') && k.startsWith('ADW_') && Array.isArray(window[k]) && window[k].length > 0);
+  const registered = new Set(Object.keys(ASSET_MAP));
+  const campNames = CAMPAIGN_SUMMARY.map(c => c.name);
+
+  assetVars.forEach(varName => {
+    const alreadyMapped = Object.values(ASSET_MAP).some(arr => arr === window[varName]);
+    if (alreadyMapped) return;
+
+    const slug = varName.replace(/^ADW_/, '').replace(/_ASSETS$/, '').toLowerCase().replace(/_/g, '-');
+    const matched = campNames.find(cn => {
+      const cnLower = cn.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const slugClean = slug.replace(/[^a-z0-9]/g, '');
+      return cnLower.includes(slugClean) || slugClean.includes(cnLower);
+    });
+    if (matched && !registered.has(matched)) {
+      regAsset(matched, window[varName]);
+      registered.add(matched);
+    }
+  });
+})();
+
 // ─── Auto-register ALL campaigns from adw_data_daily.js ───
 const CAMP_DAILY_MAP = {};
 
@@ -431,27 +455,70 @@ function renderDrillDown() {
           <td>${agTags || ''}</td>
         </tr>`;
 
-        // ─── Ad Copy Diagnostic Card ───
+        // ─── Ad Copy Diagnostic Card (fully data-driven) ───
         {
-          let relScore = '良好', relCls = 'clr-good', relMsg = '✅ 文案与核心词匹配度较高';
-          if (agQs !== null && agQs < 5) {
-            relScore = '差'; relCls = 'clr-bad';
-            relMsg = '⚠️ 核心关键词未出现在标题中，导致 Ad Relevance 极低';
-          } else if (agQs !== null && agQs < 7) {
-            relScore = '一般'; relCls = 'clr-warn';
-            relMsg = '💡 建议在标题 1 中固定高转化关键词';
-          } else if (agQs === null) {
-            relScore = '--'; relCls = 'clr-muted';
-            relMsg = 'QS 数据缺失，无法评估';
+          const kwsWithDim = ag.keywords.filter(k => k.adRelevance || k.landingPageExp || k.expectedCTR);
+          const kwsWithQS = ag.keywords.filter(k => k.qualityScore && k.qualityScore !== '');
+
+          // Real QS dimension counts from ADW
+          const dimCount = (field, label) => {
+            const above = ag.keywords.filter(k => k[field] && k[field].includes('高于')).length;
+            const avg = ag.keywords.filter(k => k[field] && !k[field].includes('高于') && !k[field].includes('低于')).length;
+            const below = ag.keywords.filter(k => k[field] && k[field].includes('低于')).length;
+            return { label, above, avg, below, total: above + avg + below };
+          };
+          const relDim = dimCount('adRelevance', 'Ad Relevance');
+          const lpDim = dimCount('landingPageExp', 'LP Experience');
+          const ctrDim = dimCount('expectedCTR', 'Expected CTR');
+
+          const hasDimData = relDim.total > 0 || lpDim.total > 0 || ctrDim.total > 0;
+
+          // Build left panel: real QS dimensions
+          const dimBar = (d) => {
+            if (d.total === 0) return `<div style="font-size:11px;color:var(--text3);">${d.label}：${ADW_MISSING_TEXT}</div>`;
+            const abovePct = (d.above / d.total * 100).toFixed(0);
+            const avgPct = (d.avg / d.total * 100).toFixed(0);
+            const belowPct = (d.below / d.total * 100).toFixed(0);
+            return `<div style="margin-bottom:8px;">
+              <div style="font-size:11px;font-weight:600;margin-bottom:3px;">${d.label}</div>
+              <div style="display:flex;height:16px;border-radius:4px;overflow:hidden;font-size:10px;line-height:16px;text-align:center;">
+                ${d.above > 0 ? `<div style="flex:${d.above};background:var(--green);color:#fff;">高于 ${d.above}</div>` : ''}
+                ${d.avg > 0 ? `<div style="flex:${d.avg};background:var(--orange);color:#fff;">平均 ${d.avg}</div>` : ''}
+                ${d.below > 0 ? `<div style="flex:${d.below};background:var(--red);color:#fff;">低于 ${d.below}</div>` : ''}
+              </div>
+            </div>`;
+          };
+
+          let leftPanelContent = '';
+          if (hasDimData) {
+            leftPanelContent = `
+              <div class="diag-strength-label">📊 QS 三维分布（ADW 真实数据）</div>
+              <div style="margin-top:4px;">${agQs !== null ? `<div style="font-size:11px;margin-bottom:8px;">加权平均 QS：<span class="bold ${agQs >= 7 ? 'clr-good' : agQs >= 5 ? 'clr-warn' : 'clr-bad'}" style="font-size:16px;">${U.fmt(agQs, 1)}</span> / 10 <span class="muted">(${kwsWithQS.length}/${ag.keywords.length} 词有 QS)</span></div>` : ''}
+              ${dimBar(relDim)}
+              ${dimBar(ctrDim)}
+              ${dimBar(lpDim)}
+              </div>
+              <div style="margin-top:4px;font-size:10px;color:var(--text3);">数据来源：ADW Keyword Report → Quality Score 拆解</div>`;
+          } else if (agQs !== null) {
+            leftPanelContent = `
+              <div class="diag-strength-label">📊 广告组加权平均 QS（ADW 真实数据）</div>
+              <div class="diag-strength-val ${agQs >= 7 ? 'clr-good' : agQs >= 5 ? 'clr-warn' : 'clr-bad'}">${U.fmt(agQs, 1)} / 10</div>
+              <div class="diag-msg">${kwsWithQS.length}/${ag.keywords.length} 个关键词有 QS 数据</div>
+              <div style="margin-top:4px;font-size:10px;color:var(--text3);">QS 三维拆解（Ad Relevance / Expected CTR / LP Experience）未返回</div>`;
+          } else {
+            leftPanelContent = `
+              <div class="diag-strength-label">📊 QS 数据</div>
+              <div class="diag-strength-val clr-muted" style="font-size:14px;">${ADW_MISSING_TEXT}</div>
+              <div class="diag-msg">该广告组关键词均无 QS 数据，无法评估文案匹配度</div>`;
           }
 
+          // Right panel: asset performance
           const assets = ASSET_MAP[c.name] || [];
           const headlines = assets.filter(a => a.type === '标题').sort((a,b) => (b.purchaseConv||0) - (a.purchaseConv||0));
           const descs = assets.filter(a => a.type === '广告内容描述').sort((a,b) => (b.purchaseConv||0) - (a.purchaseConv||0));
           const hasAssetData = headlines.length > 0 || descs.length > 0;
 
-          // Keyword coverage: check if top keywords appear in any headline
-          const topKws = ag.keywords.sort((x,y) => (y.cost||0) - (x.cost||0)).slice(0, 5);
+          const topKws = [...ag.keywords].sort((x,y) => (y.cost||0) - (x.cost||0)).slice(0, 5);
           let coverageHtml = '';
           if (hasAssetData && topKws.length > 0) {
             const hlTexts = headlines.map(h => h.asset.toLowerCase()).join(' ');
@@ -485,7 +552,7 @@ function renderDrillDown() {
             }
 
             adCopyHtml = `<div class="diag-copy">
-              <div class="diag-copy-label">🏆 资产表现红黑榜 (Campaign 级)</div>
+              <div class="diag-copy-label">🏆 资产表现红黑榜（ADW Asset Report 真实数据）</div>
               <div style="display:flex;gap:14px;">
                 <div style="flex:1;background:var(--green-bg);border-radius:6px;padding:8px 10px;border:1px solid rgba(39,174,96,0.15);">
                   <div style="font-size:10px;color:var(--green);font-weight:700;margin-bottom:4px;">🟢 Top 转化资产</div>
@@ -500,20 +567,16 @@ function renderDrillDown() {
             </div>`;
           } else {
             adCopyHtml = `<div class="diag-copy">
-              <div class="diag-copy-label">📝 文案资产</div>
-              <div style="color:var(--text3);font-style:italic;font-size:13px;padding:12px 0;">无文案资产数据（ADW未返回）</div>
-              <div style="font-size:11px;color:var(--text3);">当前无法展示资产表现，请确认 ADW 后台是否有导出该 Campaign 的 Asset Report。</div>
+              <div class="diag-copy-label">📝 文案资产数据</div>
+              <div style="color:var(--text3);font-size:13px;padding:10px 0;">该 Campaign 暂无 Asset Report 数据</div>
+              <div style="font-size:11px;color:var(--text3);">需在 ADW 后台导出该 Campaign 的「资产详情报告」并加入数据源。<br>当前仅左侧 QS 三维拆解可反映文案匹配度。</div>
             </div>`;
           }
 
           html += `<tr class="row-L3 child-${agid}">
             <td colspan="14" style="padding:12px 16px 12px 48px;white-space:normal;background:#fafaff;">
               <div class="ad-copy-diag">
-                <div class="diag-strength">
-                  <div class="diag-strength-label">📝 文案与关键词相关性评估（基于 QS）</div>
-                  <div class="diag-strength-val ${relCls}">${relScore}</div>
-                  <div class="diag-msg">${relMsg}</div>
-                </div>
+                <div class="diag-strength">${leftPanelContent}</div>
                 ${adCopyHtml}
               </div>
             </td>

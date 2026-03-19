@@ -58,8 +58,11 @@
       <li class="nav-item" data-view="landing-page">
         <span class="nav-icon">🌐</span> 落地页专区
       </li>
-      <li class="nav-item" data-view="demographics">
-        <span class="nav-icon">👥</span> 受众画像
+      <li class="nav-item" data-view="demo-gender">
+        <span class="nav-icon">🚻</span> 受众-性别
+      </li>
+      <li class="nav-item" data-view="demo-age">
+        <span class="nav-icon">📊</span> 受众-年龄
       </li>
       <li class="nav-item" data-view="ad-policy">
         <span class="nav-icon">⚠️</span> 违规提醒
@@ -482,16 +485,16 @@
       </div>
     </section>
 
-    <!-- ═══ VIEW: 受众画像 ═══ -->
-    <section class="view-section" id="view-demographics">
+    <!-- ═══ VIEW: 受众-性别 ═══ -->
+    <section class="view-section" id="view-demo-gender">
       <div class="page-header">
         <div>
-          <h2>受众画像分析</h2>
-          <span class="page-header-meta">性别 & 年龄维度消耗 — 检查是否已排除女性等非目标受众</span>
+          <h2>受众分析 — 性别</h2>
+          <span class="page-header-meta">检查是否已排除女性等非目标受众，避免预算泄漏</span>
         </div>
         <span class="data-tag data-tag-real">REAL DATA</span>
       </div>
-      <div id="demo-kpis" class="kpi-grid kpi-grid-4"></div>
+      <div id="gender-kpis" class="kpi-grid kpi-grid-4"></div>
       <div class="card">
         <div class="card-header"><h3>性别消耗明细</h3><span class="muted">重点关注 Female 是否有花费</span></div>
         <div class="card-body-flush table-wrap">
@@ -507,8 +510,20 @@
           </table>
         </div>
       </div>
-      <div class="card" style="margin-top:16px">
-        <div class="card-header"><h3>年龄段消耗明细</h3><span class="muted">关注低付费意愿年龄段的消耗</span></div>
+    </section>
+
+    <!-- ═══ VIEW: 受众-年龄 ═══ -->
+    <section class="view-section" id="view-demo-age">
+      <div class="page-header">
+        <div>
+          <h2>受众分析 — 年龄</h2>
+          <span class="page-header-meta">关注低付费意愿年龄段的消耗占比，优化受众定向</span>
+        </div>
+        <span class="data-tag data-tag-real">REAL DATA</span>
+      </div>
+      <div id="age-kpis" class="kpi-grid kpi-grid-4"></div>
+      <div class="card">
+        <div class="card-header"><h3>年龄段消耗明细</h3><span class="muted">关注 65+ 和未确定年龄段的花费</span></div>
         <div class="card-body-flush table-wrap">
           <table>
             <thead><tr>
@@ -610,6 +625,36 @@
           </table>
         </div>
       </div>
+
+      <!-- Negative Keywords Inventory -->
+      <div class="card" style="margin-top:20px;">
+        <div class="card-header" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <h3 style="margin:0;">🚫 否定关键词清单（当前在投）</h3>
+          <span class="badge badge-neutral" id="negkw-count-badge">0</span>
+          <select id="negkw-filter-level" class="camp-select" style="max-width:150px;">
+            <option value="all">全部级别</option>
+            <option value="Campaign">Campaign 级</option>
+            <option value="广告组">广告组级</option>
+          </select>
+          <select id="negkw-filter-camp" class="camp-select" style="max-width:220px;">
+            <option value="all">全部 Campaign</option>
+          </select>
+          <input type="text" id="negkw-search" class="cluster-search-input" placeholder="搜索否定词..." style="max-width:220px;margin-left:auto;">
+        </div>
+        <div class="card-body-flush table-wrap" style="max-height:450px;overflow-y:auto;">
+          <table>
+            <thead><tr>
+              <th>级别</th>
+              <th>Campaign</th>
+              <th>广告组</th>
+              <th>否定关键词</th>
+              <th>匹配类型</th>
+              <th>状态</th>
+            </tr></thead>
+            <tbody id="negkw-tbody"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
   </main>
@@ -621,6 +666,7 @@
 <script src="js/adw_data_st.js"></script>
 <script src="js/adw_data_assets.js"></script>
 <script src="js/adw_data_changelog.js?v=20260319b"></script>
+<script src="js/adw_data_negkw.js?v=20260319b"></script>
 <script src="js/utils-0319.js"></script>
 <script src="js/engine-0319.js"></script>
 <script src="js/search-optimizer-0319.js?v=20260319b"></script>

@@ -1914,27 +1914,23 @@ const AGE_MAP = {};
   console.log('[AutoReg] GENDER:', Object.keys(GENDER_MAP).length, 'AGE:', Object.keys(AGE_MAP).length);
 })();
 
-function renderDemographics() {
+function renderGender() {
   const allGender = [];
   Object.entries(GENDER_MAP).forEach(([camp, rows]) => {
     const campTotal = rows.reduce((s, r) => s + (r.cost || 0), 0);
     rows.forEach(r => allGender.push({ ...r, campTotal }));
   });
-  const allAge = [];
-  Object.entries(AGE_MAP).forEach(([camp, rows]) => {
-    const campTotal = rows.reduce((s, r) => s + (r.cost || 0), 0);
-    rows.forEach(r => allAge.push({ ...r, campTotal }));
-  });
 
   const femaleCost = allGender.filter(r => r.gender === '女性').reduce((s, r) => s + (r.cost || 0), 0);
   const totalGenderCost = allGender.reduce((s, r) => s + (r.cost || 0), 0);
   const campsWithFemale = [...new Set(allGender.filter(r => r.gender === '女性' && r.cost > 0).map(r => r.campaign))];
+  const maleCost = allGender.filter(r => r.gender === '男性').reduce((s, r) => s + (r.cost || 0), 0);
 
-  U.html('demo-kpis', `
-    <div class="kpi-card"><div class="kpi-label">有受众数据 Campaign</div><div class="kpi-value">${Object.keys(GENDER_MAP).length}</div></div>
+  U.html('gender-kpis', `
+    <div class="kpi-card"><div class="kpi-label">有性别数据 Campaign</div><div class="kpi-value">${Object.keys(GENDER_MAP).length}</div></div>
     <div class="kpi-card"><div class="kpi-label">Female 总花费</div><div class="kpi-value clr-${femaleCost > 0 ? 'bad' : 'good'}">${U.fmtK(Math.round(femaleCost))}</div><div class="kpi-sub">${femaleCost > 0 ? campsWithFemale.length + ' 个 Campaign 有泄漏' : '已全部排除'}</div></div>
     <div class="kpi-card"><div class="kpi-label">Female 占比</div><div class="kpi-value clr-${U.pct(femaleCost, totalGenderCost) > 5 ? 'bad' : 'good'}">${U.fmtPct(U.pct(femaleCost, totalGenderCost), 1)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">年龄段数据</div><div class="kpi-value">${Object.keys(AGE_MAP).length}</div><div class="kpi-sub">Campaign 有数据</div></div>
+    <div class="kpi-card"><div class="kpi-label">Male 总花费</div><div class="kpi-value">${U.fmtK(Math.round(maleCost))}</div><div class="kpi-sub">${U.fmtPct(U.pct(maleCost, totalGenderCost), 1)} 占比</div></div>
   `);
 
   let gHtml = '';
@@ -1958,6 +1954,26 @@ function renderDemographics() {
     </tr>`;
   });
   U.html('gender-tbody', gHtml || '<tr><td colspan="9" class="muted" style="text-align:center;padding:20px;">暂无性别数据。运行 fetch_adw_data.py 拉取 gender_view 后可用。</td></tr>');
+}
+
+function renderAge() {
+  const allAge = [];
+  Object.entries(AGE_MAP).forEach(([camp, rows]) => {
+    const campTotal = rows.reduce((s, r) => s + (r.cost || 0), 0);
+    rows.forEach(r => allAge.push({ ...r, campTotal }));
+  });
+
+  const totalAgeCost = allAge.reduce((s, r) => s + (r.cost || 0), 0);
+  const youngCost = allAge.filter(r => r.ageRange === '18-24' || r.ageRange === '25-34').reduce((s, r) => s + (r.cost || 0), 0);
+  const seniorCost = allAge.filter(r => r.ageRange === '55-64' || r.ageRange === '65+').reduce((s, r) => s + (r.cost || 0), 0);
+  const unknownCost = allAge.filter(r => r.ageRange === '未确定').reduce((s, r) => s + (r.cost || 0), 0);
+
+  U.html('age-kpis', `
+    <div class="kpi-card"><div class="kpi-label">有年龄数据 Campaign</div><div class="kpi-value">${Object.keys(AGE_MAP).length}</div></div>
+    <div class="kpi-card"><div class="kpi-label">18-34 核心人群花费</div><div class="kpi-value">${U.fmtK(Math.round(youngCost))}</div><div class="kpi-sub">${U.fmtPct(U.pct(youngCost, totalAgeCost), 1)} 占比</div></div>
+    <div class="kpi-card"><div class="kpi-label">55+ 低意愿花费</div><div class="kpi-value clr-${seniorCost > 500 ? 'warn' : 'good'}">${U.fmtK(Math.round(seniorCost))}</div><div class="kpi-sub">${U.fmtPct(U.pct(seniorCost, totalAgeCost), 1)} 占比</div></div>
+    <div class="kpi-card"><div class="kpi-label">未确定年龄花费</div><div class="kpi-value clr-${U.pct(unknownCost, totalAgeCost) > 20 ? 'warn' : 'good'}">${U.fmtK(Math.round(unknownCost))}</div><div class="kpi-sub">${U.fmtPct(U.pct(unknownCost, totalAgeCost), 1)} 占比</div></div>
+  `);
 
   let aHtml = '';
   allAge.sort((a, b) => {
@@ -2466,6 +2482,68 @@ renderClusterView();
 renderQualityScore();
 renderDevices();
 renderLandingPageZone();
-renderDemographics();
+renderGender();
+renderAge();
 renderAdPolicy();
 renderChangeLog();
+renderNegativeKeywords();
+
+// ═══════════════════════════════════════
+// NEGATIVE KEYWORDS INVENTORY
+// ═══════════════════════════════════════
+function renderNegativeKeywords() {
+  const NEG_KW = (typeof ADW_NEGATIVE_KEYWORDS !== 'undefined') ? ADW_NEGATIVE_KEYWORDS : [];
+  if (NEG_KW.length === 0) return;
+
+  U.el('negkw-count-badge').textContent = NEG_KW.length + ' 个';
+
+  const campFilter = U.el('negkw-filter-camp');
+  const camps = [...new Set(NEG_KW.map(e => e.campaign).filter(Boolean))].sort();
+  campFilter.innerHTML = '<option value="all">全部 Campaign</option>' +
+    camps.map(c => `<option value="${c}">${U.campShortName(c)}</option>`).join('');
+
+  function filterNegKW() {
+    const levelVal = U.el('negkw-filter-level').value;
+    const campVal = U.el('negkw-filter-camp').value;
+    const searchVal = U.el('negkw-search').value.trim().toLowerCase();
+
+    let filtered = NEG_KW;
+    if (levelVal !== 'all') filtered = filtered.filter(e => e.level === levelVal);
+    if (campVal !== 'all') filtered = filtered.filter(e => e.campaign === campVal);
+    if (searchVal.length >= 2) {
+      filtered = filtered.filter(e =>
+        (e.keyword || '').toLowerCase().includes(searchVal) ||
+        (e.campaign || '').toLowerCase().includes(searchVal) ||
+        (e.adGroup || '').toLowerCase().includes(searchVal)
+      );
+    }
+
+    U.el('negkw-count-badge').textContent = filtered.length + ' 个';
+
+    const mtBadge = mt => {
+      if (mt === '完全匹配') return '<span class="badge badge-func">[完全]</span>';
+      if (mt === '词组匹配') return '<span class="badge badge-info">[词组]</span>';
+      if (mt === '广泛匹配') return '<span class="badge badge-warn">[广泛]</span>';
+      return `<span class="badge badge-neutral">${mt}</span>`;
+    };
+
+    let html = '';
+    filtered.forEach(e => {
+      html += `<tr>
+        <td><span class="badge ${e.level === 'Campaign' ? 'badge-search' : 'badge-info'}" style="font-size:10px;">${e.level}</span></td>
+        <td class="bold" title="${e.campaign}" style="font-size:12px;">${U.campShortName(e.campaign || '--')}</td>
+        <td class="muted" style="font-size:12px;">${e.adGroup || '--'}</td>
+        <td style="font-weight:600;">${e.keyword}</td>
+        <td>${mtBadge(e.matchType)}</td>
+        <td class="muted">${e.status}</td>
+      </tr>`;
+    });
+    if (!html) html = '<tr><td colspan="6" class="muted" style="text-align:center;padding:30px;">无匹配的否定关键词</td></tr>';
+    U.html('negkw-tbody', html);
+  }
+
+  filterNegKW();
+  U.el('negkw-filter-level').addEventListener('change', filterNegKW);
+  campFilter.addEventListener('change', filterNegKW);
+  U.el('negkw-search').addEventListener('input', filterNegKW);
+}

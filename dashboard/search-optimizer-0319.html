@@ -913,14 +913,6 @@
         <button class="kb-tab" data-kb-tab="personal" style="padding:10px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--text3);">我的知识库</button>
         <button class="kb-tab" data-kb-tab="review" style="padding:10px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--text3);">待评审 <span id="kb-review-badge" style="display:none;background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:10px;margin-left:4px;">0</span></button>
       </div>
-      <div id="kb-product-filter" style="display:none;margin-bottom:12px;">
-        <select id="kb-product-select" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--card-bg,#fff);color:var(--text);">
-          <option value="all">全部产品</option>
-          <option value="ft">Ft (Fachat)</option>
-          <option value="pu">Pu (Parau)</option>
-          <option value="ppt">Ppt (PinkPinkChat)</option>
-        </select>
-      </div>
       <div id="kb-list" style="display:flex;flex-direction:column;gap:12px;"></div>
     </section>
 
@@ -982,7 +974,7 @@
 <script src="js/utils-0319.js"></script>
 <script src="js/engine-0319.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/supabase-sync.js?v=20260320kb5"></script>
+<script src="js/supabase-sync.js?v=20260320kb6"></script>
 <!-- 登录逻辑内联，避免部署漏传 js/so-auth.js 导致 404；修改账号仍请同步编辑此处与 js/so-auth.js -->
 <script>
 (function () {
@@ -1101,7 +1093,7 @@
   else wire();
 })();
 </script>
-<script src="js/search-optimizer-0319.js?v=20260320chrome1"></script>
+<script src="js/search-optimizer-0319.js?v=20260320kb6"></script>
 <script>
 /* 捕获阶段处理退出：不依赖 SOAuth，避免其它脚本报错导致无法退出 */
 (function () {

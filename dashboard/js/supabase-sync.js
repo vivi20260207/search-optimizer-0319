@@ -341,7 +341,14 @@
           .select('id, category, content, tags, source, owner, scope, product, status, reviewed_by, reviewed_at, created_at')
           .is('deleted_at', null)
           .order('id');
-        if (res.error) throw res.error;
+        if (res.error) {
+          // Fallback: new columns may not exist yet (migration not run)
+          res = await sb().from('knowledge_base')
+            .select('id, category, content, tags, source, created_at')
+            .is('deleted_at', null)
+            .order('id');
+          if (res.error) throw res.error;
+        }
         this._kbCache = res.data || [];
         this._kbCacheTime = now;
         if (filterTags) {

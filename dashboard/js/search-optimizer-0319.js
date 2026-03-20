@@ -4284,8 +4284,6 @@ function renderNegKWCenter() {
   // ── Tab state ──
   let activeTab = 'team';
   const listEl = document.getElementById('kb-list');
-  const productFilter = document.getElementById('kb-product-filter');
-  const productSelect = document.getElementById('kb-product-select');
 
   async function fetchAll() {
     if (typeof SBSync === 'undefined' || !SBSync.getKnowledge) return [];
@@ -4293,12 +4291,23 @@ function renderNegKWCenter() {
     return await SBSync.getKnowledge();
   }
 
+  function isTeamItem(k) {
+    if (k.scope === 'team') return true;
+    if (!k.scope || k.scope === 'personal') {
+      if (k.status === 'approved' || !k.status) return true;
+    }
+    return false;
+  }
+  function isProductItem(k) {
+    return k.scope === 'product' && (k.status === 'approved' || !k.status);
+  }
+
   // ── Tab: 优化组知识库 ──
   async function renderTeam() {
     if (!listEl) return;
     const all = await fetchAll();
-    const items = all.filter(k => k.scope === 'team' && k.status === 'approved');
-    if (!items.length) { listEl.innerHTML = emptyMsg('暂无优化组知识。通过评审的知识会出现在这里。'); return; }
+    const items = all.filter(k => isTeamItem(k) && !isProductItem(k));
+    if (!items.length) { listEl.innerHTML = emptyMsg('暂无优化组知识。'); return; }
     const grouped = {};
     items.forEach(k => { const c = k.category || 'user_correction'; if (!grouped[c]) grouped[c] = []; grouped[c].push(k); });
     let html = '';
@@ -4311,20 +4320,26 @@ function renderNegKWCenter() {
     bindItemClicks(listEl, items, { canDelete: isAdmin() });
   }
 
-  // ── Tab: 分产品知识库 ──
+  // ── Tab: 分产品知识库（按产品分组全展示，无筛选框） ──
   async function renderProduct() {
     if (!listEl) return;
-    productFilter.style.display = '';
-    const pf = productSelect.value;
     const all = await fetchAll();
-    let items = all.filter(k => k.scope === 'product' && k.status === 'approved');
-    if (pf !== 'all') items = items.filter(k => k.product === pf);
-    if (!items.length) { listEl.innerHTML = emptyMsg('暂无分产品知识。评审时选择产品分类后会出现在这里。'); return; }
+    const items = all.filter(k => isProductItem(k));
+    if (!items.length) { listEl.innerHTML = emptyMsg('暂无分产品知识。评审时选择「分产品」后会出现在这里。'); return; }
     const byProduct = {};
     items.forEach(k => { const p = k.product || 'other'; if (!byProduct[p]) byProduct[p] = []; byProduct[p].push(k); });
     let html = '';
-    Object.entries(byProduct).forEach(([p, entries]) => {
+    const order = ['ft', 'pu', 'ppt'];
+    order.forEach(p => {
+      const entries = byProduct[p];
+      if (!entries || !entries.length) return;
       html += `<div class="ai-kb-group card"><div class="ai-kb-group-title">${PRODUCT_LABELS[p] || p} (${entries.length})</div>`;
+      entries.forEach(k => { html += renderItemCard(k, { canDelete: isAdmin() }); });
+      html += '</div>';
+    });
+    Object.entries(byProduct).forEach(([p, entries]) => {
+      if (order.includes(p)) return;
+      html += `<div class="ai-kb-group card"><div class="ai-kb-group-title">${p} (${entries.length})</div>`;
       entries.forEach(k => { html += renderItemCard(k, { canDelete: isAdmin() }); });
       html += '</div>';
     });
@@ -4427,7 +4442,6 @@ function renderNegKWCenter() {
 
   // ── Tab switching ──
   function renderCurrentTab() {
-    if (productFilter) productFilter.style.display = 'none';
     if (activeTab === 'team') renderTeam();
     else if (activeTab === 'product') renderProduct();
     else if (activeTab === 'personal') renderPersonal();
@@ -4446,8 +4460,6 @@ function renderNegKWCenter() {
       renderCurrentTab();
     });
   });
-
-  if (productSelect) productSelect.addEventListener('change', () => { if (activeTab === 'product') renderProduct(); });
 
   // ── Add knowledge ──
   const addBtn = document.getElementById('kb-add-btn');

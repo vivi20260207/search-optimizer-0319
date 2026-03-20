@@ -4051,25 +4051,30 @@ function renderNegKWCenter() {
 })();
 
 // ═══════════════════════════════════════
-// 知识库 + 优化师知识库（双 Tab）
+// AI 知识库 + 优化师知识库（双 Tab，右侧 Drawer 交互）
 // ═══════════════════════════════════════
 (function initKnowledgeTabs() {
 
   const AI_CATS = {
-    ai_threshold:   '📊 指标判断阈值',
-    ai_qs_rule:     '🎯 Quality Score 诊断',
-    ai_search_term: '🔍 搜索词分析规则',
-    ai_negkw_rule:  '🚫 否定词诊断规则',
-    ai_structure:   '🏗️ Campaign 结构分析',
-    ai_bid_strategy:'💰 出价策略判断',
-    ai_anomaly:     '⚠️ 异常检测规则',
+    ai_threshold:    '📊 指标判断阈值',
+    ai_qs_rule:      '🎯 Quality Score 诊断',
+    ai_search_term:  '🔍 搜索词分析规则',
+    ai_negkw_rule:   '🚫 否定词诊断规则',
+    ai_structure:    '🏗️ Campaign 结构分析',
+    ai_bid_strategy: '💰 出价策略判断',
+    ai_anomaly:      '⚠️ 异常检测规则',
+    ai_geo_device:   '🌍 地区×设备策略',
+    ai_audience:     '👥 受众规则',
+    ai_relevance:    '🔗 相关性链条',
+    ai_keyword_method:'🔑 关键词方法论',
+    ai_budget:       '💵 预算分配',
   };
 
   const OPT_CATS = {
-    brand_keyword:    '🏷️ 品牌词定义',
-    negkw_rule:       '🚫 否定词规则',
-    campaign_rule:    '📋 Campaign 规则',
-    user_correction:  '✏️ 用户纠正',
+    brand_keyword:   '🏷️ 品牌词定义',
+    negkw_rule:      '🚫 否定词规则',
+    campaign_rule:   '📋 Campaign 规则',
+    user_correction: '✏️ 用户纠正',
   };
 
   const KB_NOTES_KEY = 'kb_item_notes';
@@ -4107,52 +4112,92 @@ function renderNegKWCenter() {
     }
   }
 
-  function renderNoteSection(kbId, container) {
-    const notes = getKBNotes(kbId);
-    let html = '<div style="margin-bottom:8px;font-size:11px;font-weight:600;color:var(--text2);">💬 备注与纠正 (' + notes.length + ')</div>';
-    html += '<div class="note-thread" style="max-height:240px;overflow-y:auto;margin-bottom:8px;">';
-    if (notes.length === 0) {
-      html += '<div class="muted" style="text-align:center;padding:12px;font-size:11px;">如果这条规则有误，在此纠正，AI 下次分析会参考</div>';
+  function updateKBNoteIndicator(kbId) {
+    const el = document.querySelector(`.ai-kb-item[data-kbid="${kbId}"] .ai-kb-item-note-count`);
+    if (el) {
+      const notes = getKBNotes(kbId);
+      el.textContent = notes.length > 0 ? notes.length + ' 条备注' : '';
+      el.style.display = notes.length > 0 ? '' : 'none';
     }
-    notes.forEach((n, i) => {
-      const time = new Date(n.ts).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
-      html += `<div class="note-bubble note-${n.role}" style="font-size:11px;">
-        <div>${n.text.replace(/\n/g, '<br>')}</div>
-        <div class="note-time">${n.role === 'user' ? '我' : '系统'} · ${time}
-          <button class="kb-note-del" data-kbid="${kbId}" data-idx="${i}" title="删除" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:10px;padding:1px 4px;">✕</button>
-        </div>
-      </div>`;
-    });
-    html += '</div>';
-    html += `<div style="display:flex;gap:6px;">
-      <input type="text" class="kb-note-input" data-kbid="${kbId}" placeholder="输入纠正或备注…" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:11px;background:var(--card-bg);color:var(--text);">
-      <button class="kb-note-send" data-kbid="${kbId}" style="padding:4px 12px;border-radius:6px;border:none;background:#4f46e5;color:#fff;font-size:11px;cursor:pointer;white-space:nowrap;">发送</button>
-    </div>`;
-    container.innerHTML = html;
+  }
 
-    container.querySelector('.kb-note-send').addEventListener('click', () => {
-      const input = container.querySelector('.kb-note-input');
-      const text = input.value.trim();
-      if (!text) return;
-      addKBNote(kbId, text, 'user');
-      input.value = '';
-      renderNoteSection(kbId, container);
-      if (typeof SBSync !== 'undefined' && SBSync.addKnowledge) {
-        SBSync.addKnowledge('user_correction', '针对知识#' + kbId + '的纠正：' + text, 'user_correction', ['correction', 'kb_' + kbId]);
+  function openKBDrawer(item, catLabel) {
+    const overlay = U.el('drawer-overlay');
+    const drawer = U.el('kw-drawer');
+    U.el('drawer-title').textContent = catLabel;
+    U.el('drawer-subtitle').innerHTML = `知识 #${item.id} · ${(item.tags || []).join(', ')}`;
+
+    function renderContent() {
+      const notes = getKBNotes(item.id);
+      let html = '';
+
+      html += `<div class="drawer-section"><div class="drawer-section-title">📋 规则内容</div>
+        <div class="drawer-verdict"><div class="drawer-verdict-detail" style="font-size:14px;line-height:1.8;">${item.content}</div></div></div>`;
+
+      if (item.tags && item.tags.length) {
+        html += `<div class="drawer-section"><div class="drawer-section-title">🏷️ 标签</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">`;
+        item.tags.forEach(t => { html += `<span style="background:var(--bg-sub);padding:3px 10px;border-radius:6px;font-size:12px;color:var(--text2);">${t}</span>`; });
+        html += '</div></div>';
       }
-    });
 
-    container.querySelector('.kb-note-input').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); container.querySelector('.kb-note-send').click(); }
-    });
+      html += `<div class="drawer-section"><div class="drawer-section-title">💬 备注与纠正 (${notes.length})</div>`;
+      html += '<div class="note-thread" id="kb-drawer-notes" style="max-height:320px;overflow-y:auto;">';
+      if (notes.length === 0) {
+        html += '<div class="muted" style="text-align:center;padding:16px;font-size:13px;">如果这条规则有误，在此纠正，AI 下次分析会自动参考</div>';
+      } else {
+        notes.forEach((n, i) => {
+          const time = new Date(n.ts).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
+          html += `<div class="note-bubble note-${n.role}">
+            <div>${n.text.replace(/\n/g, '<br>')}</div>
+            <div class="note-time">${n.role === 'user' ? '我' : '系统'} · ${time}
+              <button class="note-delete-btn kb-drawer-del" data-idx="${i}" title="删除">✕</button>
+            </div>
+          </div>`;
+        });
+      }
+      html += '</div>';
+      html += `<div class="note-input-wrap">
+        <textarea class="note-input" id="kb-drawer-input" placeholder="输入纠正或备注…" rows="2"></textarea>
+        <button class="note-send-btn" id="kb-drawer-send">发送</button>
+      </div></div>`;
 
-    container.querySelectorAll('.kb-note-del').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        deleteKBNote(parseInt(btn.dataset.kbid), parseInt(btn.dataset.idx));
-        renderNoteSection(kbId, container);
+      U.html('drawer-body', html);
+
+      U.el('kb-drawer-send').addEventListener('click', () => {
+        const input = U.el('kb-drawer-input');
+        const text = input.value.trim();
+        if (!text) return;
+        addKBNote(item.id, text, 'user');
+        input.value = '';
+        renderContent();
+        updateKBNoteIndicator(item.id);
+        setTimeout(() => {
+          const thread = document.getElementById('kb-drawer-notes');
+          if (thread) thread.scrollTop = thread.scrollHeight;
+        }, 50);
+        if (typeof SBSync !== 'undefined' && SBSync.addKnowledge) {
+          SBSync.addKnowledge('user_correction', '针对知识#' + item.id + '的纠正：' + text, 'user_correction', ['correction', 'kb_' + item.id]);
+        }
       });
-    });
+
+      U.el('kb-drawer-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); U.el('kb-drawer-send').click(); }
+      });
+
+      document.querySelectorAll('.kb-drawer-del').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteKBNote(item.id, parseInt(btn.dataset.idx));
+          renderContent();
+          updateKBNoteIndicator(item.id);
+        });
+      });
+    }
+
+    renderContent();
+    overlay.classList.add('open');
+    drawer.classList.add('open');
   }
 
   // ── AI Knowledge Tab ──
@@ -4191,18 +4236,15 @@ function renderNegKWCenter() {
         <div class="ai-kb-group-title">${label} (${entries.length})</div>`;
       entries.forEach(k => {
         const notes = getKBNotes(k.id);
-        const notesBadge = notes.length > 0 ? `<span class="ai-kb-item-note-count">${notes.length} 条备注</span>` : '';
-        const tags = (k.tags || []).map(t => `<span>${t}</span>`).join('');
-        html += `<div class="ai-kb-item" data-kbid="${k.id}">
+        const notesBadge = `<span class="ai-kb-item-note-count" style="${notes.length > 0 ? '' : 'display:none;'}">${notes.length > 0 ? notes.length + ' 条备注' : ''}</span>`;
+        html += `<div class="ai-kb-item" data-kbid="${k.id}" data-cat="${label}" style="cursor:pointer;">
           <div class="ai-kb-item-header">
-            <span class="ai-kb-item-arrow">▶</span>
-            <div class="ai-kb-item-content">
-              <div>${k.content}</div>
-              <div class="ai-kb-item-tags">${tags}</div>
+            <div class="ai-kb-item-content" style="font-size:13px;line-height:1.7;">
+              ${k.content}
             </div>
             ${notesBadge}
+            <span style="color:var(--text3);font-size:14px;flex-shrink:0;">›</span>
           </div>
-          <div class="ai-kb-item-notes" id="ai-kb-notes-${k.id}"></div>
         </div>`;
       });
       html += '</div>';
@@ -4210,16 +4252,12 @@ function renderNegKWCenter() {
 
     listEl.innerHTML = html;
 
-    listEl.querySelectorAll('.ai-kb-item-header').forEach(hdr => {
-      hdr.addEventListener('click', () => {
-        const item = hdr.closest('.ai-kb-item');
-        const wasExpanded = item.classList.contains('expanded');
-        item.classList.toggle('expanded');
-        if (!wasExpanded) {
-          const kbId = parseInt(item.dataset.kbid);
-          const noteContainer = item.querySelector('.ai-kb-item-notes');
-          renderNoteSection(kbId, noteContainer);
-        }
+    listEl.querySelectorAll('.ai-kb-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const kbId = parseInt(el.dataset.kbid);
+        const catL = el.dataset.cat;
+        const found = aiItems.find(k => k.id === kbId);
+        if (found) openKBDrawer(found, catL);
       });
     });
   }
@@ -4260,23 +4298,18 @@ function renderNegKWCenter() {
         <div class="ai-kb-group-title">${label} (${entries.length})</div>`;
       entries.forEach(k => {
         const notes = getKBNotes(k.id);
-        const notesBadge = notes.length > 0 ? `<span class="ai-kb-item-note-count">${notes.length} 条备注</span>` : '';
-        const tags = (k.tags || []).map(t => `<span style="background:var(--bg-sub);padding:1px 6px;border-radius:4px;font-size:10px;color:var(--text3);">${t}</span>`).join(' ');
+        const notesBadge = `<span class="ai-kb-item-note-count" style="${notes.length > 0 ? '' : 'display:none;'}">${notes.length > 0 ? notes.length + ' 条备注' : ''}</span>`;
         const sourceLabel = k.source === 'user_correction' ? '纠正' : k.source === 'manual' ? '手动' : k.source === 'system' ? '系统' : k.source;
-        html += `<div class="ai-kb-item" data-kbid="${k.id}">
+        html += `<div class="ai-kb-item" data-kbid="${k.id}" data-cat="${label}" style="cursor:pointer;">
           <div class="ai-kb-item-header">
-            <span class="ai-kb-item-arrow">▶</span>
-            <div class="ai-kb-item-content">
+            <div class="ai-kb-item-content" style="font-size:13px;line-height:1.7;">
               <div>${k.content}</div>
-              <div style="margin-top:4px;display:flex;gap:6px;align-items:center;">
-                ${tags}
-                <span style="font-size:10px;color:var(--text3);">来源: ${sourceLabel}</span>
-              </div>
+              <div style="margin-top:4px;font-size:11px;color:var(--text3);">来源: ${sourceLabel}</div>
             </div>
             ${notesBadge}
             <button class="opt-kb-del" data-id="${k.id}" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;padding:2px 4px;flex-shrink:0;" title="删除">✕</button>
+            <span style="color:var(--text3);font-size:14px;flex-shrink:0;">›</span>
           </div>
-          <div class="ai-kb-item-notes" id="opt-kb-notes-${k.id}"></div>
         </div>`;
       });
       html += '</div>';
@@ -4284,17 +4317,13 @@ function renderNegKWCenter() {
 
     listEl.innerHTML = html;
 
-    listEl.querySelectorAll('.ai-kb-item-header').forEach(hdr => {
-      hdr.addEventListener('click', (e) => {
+    listEl.querySelectorAll('.ai-kb-item').forEach(el => {
+      el.addEventListener('click', (e) => {
         if (e.target.closest('.opt-kb-del')) return;
-        const item = hdr.closest('.ai-kb-item');
-        const wasExpanded = item.classList.contains('expanded');
-        item.classList.toggle('expanded');
-        if (!wasExpanded) {
-          const kbId = parseInt(item.dataset.kbid);
-          const noteContainer = item.querySelector('.ai-kb-item-notes');
-          renderNoteSection(kbId, noteContainer);
-        }
+        const kbId = parseInt(el.dataset.kbid);
+        const catL = el.dataset.cat;
+        const found = optItems.find(k => k.id === kbId);
+        if (found) openKBDrawer(found, catL);
       });
     });
 
@@ -4311,7 +4340,7 @@ function renderNegKWCenter() {
   const addBtn = document.getElementById('opt-kb-add-btn');
   if (addBtn) {
     addBtn.addEventListener('click', () => {
-      const content = prompt('输入知识内容：');
+      const content = prompt('输入知识内容（AI 分析时会自动参考）：');
       if (!content || !content.trim()) return;
       const cats = Object.keys(OPT_CATS);
       const catLabels = cats.map((c, i) => (i + 1) + '. ' + OPT_CATS[c]).join('\n');

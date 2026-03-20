@@ -53,17 +53,18 @@ run_script() {
     fi
 }
 
-run_script "1/4 每日数据"       fetch_adw_data.py
-run_script "2/4 变更日志"       fetch_change_history.py
-run_script "3/4 否定关键词"     fetch_negative_keywords.py
-run_script "4/4 App变更日志"    fetch_app_change_history.py
+run_script "1/5 每日数据"       fetch_adw_data.py
+run_script "2/5 变更日志"       fetch_change_history.py
+run_script "3/5 否定关键词"     fetch_negative_keywords.py
+run_script "4/5 App变更日志"    fetch_app_change_history.py
+run_script "5/5 落地页健康"     fetch_lp_health.py
 
 log ""
 log "═══════════════════════════════════════"
 if [ "$FAILED" -gt 0 ]; then
     log "⚠️  完成，但有 $FAILED 个脚本失败。请检查日志: $LOG_FILE"
 else
-    log "✅ 全部 4 个脚本执行成功"
+    log "✅ 全部 5 个脚本执行成功"
 fi
 
 # 更新 HTML 中的数据日期
@@ -87,6 +88,7 @@ if [ "$AUTO_PUSH" = true ] && [ "$FAILED" -eq 0 ]; then
             dashboard/js/adw_data_changelog.js \
             dashboard/js/adw_data_negkw.js \
             dashboard/js/adw_data_app_changelog.js \
+            dashboard/js/adw_data_lp.js \
             dashboard/search-optimizer-0319.html \
             2>/dev/null || true
 

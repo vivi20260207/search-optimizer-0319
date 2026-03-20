@@ -94,6 +94,12 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
 
+      - name: Fetch landing page health (adw_data_lp.js)
+        run: pip install requests && python fetch_lp_health.py
+        continue-on-error: true
+        env:
+          PAGESPEED_API_KEY: ${{ secrets.PAGESPEED_API_KEY }}
+
       - name: Update HTML date
         run: |
           TODAY=$(date +%Y-%m-%d)
@@ -107,6 +113,7 @@ jobs:
                   dashboard/js/adw_data_changelog.js \
                   dashboard/js/adw_data_negkw.js \
                   dashboard/js/adw_data_app_changelog.js \
+                  dashboard/js/adw_data_lp.js \
                   dashboard/search-optimizer-0319.html \
                   2>/dev/null || true
           if git diff --cached --quiet; then

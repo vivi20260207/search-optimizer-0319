@@ -196,6 +196,26 @@ const Engine = {
               rootCause: null
             });
           }
+
+          // SOP 3d: 高意向词成本偏高 → 渐进收紧匹配类型
+          const mt = U.parseMatchType(kw.matchType);
+          const kwCPA = kw.cpa || (kw.purchaseNew > 0 && kw.cost > 0 ? kw.cost / kw.purchaseNew : null);
+          const isHighIntent = kw.purchaseNew >= 1 && (kw.cost || 0) > 50;
+          const isCostHigh = kwCPA && c.newCPA && kwCPA > c.newCPA * 1.2;
+          if (isHighIntent && isCostHigh && (mt === 'Broad' || mt === 'Phrase')) {
+            const nextMatch = mt === 'Broad' ? '词组匹配' : '精确匹配';
+            anomalies.push({
+              severity: 'info',
+              level: 'Keyword',
+              target: `${kw.keyword} [${mt}]`,
+              type: 'match_tighten',
+              title: `收紧匹配：${kw.keyword}`,
+              desc: `有转化但 CPA ${U.fmt(kwCPA)} 高于均值 ${U.fmt(c.newCPA)} 的 20%+，当前${kw.matchType}。建议收紧到${nextMatch}以控制成本`,
+              campaign: c,
+              keyword: kw,
+              rootCause: null
+            });
+          }
         });
       }
 
@@ -347,6 +367,18 @@ const Engine = {
     } else if (anomaly.type === 'scale_opportunity') {
       suggestions.push('提价 15-30% 测试扩量');
       suggestions.push('单提为 Exact 匹配并独立给高价');
+    } else if (anomaly.type === 'match_tighten') {
+      const kw = anomaly.keyword;
+      const mt = U.parseMatchType(kw.matchType);
+      if (mt === 'Broad') {
+        suggestions.push(`将 "${kw.keyword}" 从广泛匹配调整为词组匹配，减少不相关搜索词触发`);
+        suggestions.push('调整前先检查搜索词报告，确认主要转化来自相关搜索词');
+        suggestions.push('如词组匹配后 CPA 仍高，可进一步收紧为精确匹配');
+      } else if (mt === 'Phrase') {
+        suggestions.push(`将 "${kw.keyword}" 从词组匹配调整为精确匹配，锁定精准流量`);
+        suggestions.push('精确匹配后展示量会下降，观察 3-5 天确认 CPA 改善后再决定');
+      }
+      suggestions.push('收紧匹配同时可适当提高出价 10-15%，弥补流量损失');
     } else if (anomaly.type === 'gold_search_term') {
       suggestions.push(`将 "${anomaly.searchTerm.term}" 添加为精确匹配关键词，锁住优质流量`);
       suggestions.push('在原广泛匹配关键词中添加该词为否定词，避免两个匹配类型互相抢量');

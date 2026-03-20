@@ -166,6 +166,28 @@ body {
   background: var(--bg-alt);
 }
 .global-date-bar-sep { color: var(--text3); font-size: 12px; }
+.global-date-bar-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.global-date-bar-quick {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-alt);
+  color: var(--text);
+  cursor: pointer;
+}
+.global-date-bar-quick:hover {
+  background: var(--border-light, #eef1f6);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .global-date-bar-apply {
   font: inherit;
   font-size: 12px;
@@ -1078,6 +1100,82 @@ td.num { font-variant-numeric: tabular-nums; }
 .risk-high { color: var(--red, #ef4444); font-weight: 700; }
 .risk-medium { color: var(--orange, #f59e0b); font-weight: 600; }
 .risk-low { color: var(--green, #22c55e); }
+
+/* ═══ Login overlay (so-auth.js) ═══ */
+.so-auth-overlay[hidden] {
+  display: none !important;
+  pointer-events: none;
+}
+.so-auth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+}
+.so-auth-box {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  margin: 0;
+  padding: 28px 24px;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+}
+.so-auth-title { font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.so-auth-sub { font-size: 13px; margin-bottom: 20px; color: var(--text3); }
+.so-auth-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  margin-bottom: 6px;
+}
+.so-auth-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  margin-bottom: 14px;
+  background: var(--bg);
+  color: var(--text);
+}
+.so-auth-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+.so-auth-err { min-height: 20px; font-size: 12px; color: var(--red); margin-bottom: 8px; }
+.so-auth-btn {
+  width: 100%;
+  padding: 11px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.so-auth-btn:hover { background: var(--accent-hover); }
+.so-auth-logout-btn {
+  margin-top: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--text3);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.so-auth-logout-btn:hover { color: var(--text2); background: var(--bg-alt); }
 
 @media (max-width: 1200px) {
   .kpi-grid-5, .kpi-grid-6 { grid-template-columns: repeat(3, 1fr); }

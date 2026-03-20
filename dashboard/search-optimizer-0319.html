@@ -4,20 +4,21 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Search Optimizer 中台 | Google Ads 优化</title>
-  <link rel="stylesheet" href="css/search-optimizer-0319.css?v=20260320auth1">
+  <link rel="stylesheet" href="css/search-optimizer-0319.css?v=20260320dateUI1">
 </head>
 <body>
-<div id="so-auth-overlay" class="so-auth-overlay" aria-modal="true" role="dialog">
-  <div class="so-auth-box">
+<div id="so-auth-overlay" class="so-auth-overlay" aria-modal="true" role="dialog"
+  style="position:fixed;inset:0;z-index:100000;box-sizing:border-box;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,0.45);">
+  <form class="so-auth-box" autocomplete="off" onsubmit="return false;" aria-label="登录">
     <h2 class="so-auth-title">Search Optimizer</h2>
     <p class="so-auth-sub muted">登录后使用优化中台</p>
     <label class="so-auth-label" for="so-auth-user">用户名</label>
-    <input type="text" id="so-auth-user" class="so-auth-input" autocomplete="username" placeholder="用户名" />
+    <input type="text" id="so-auth-user" class="so-auth-input" name="so_opt_user" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="用户名" />
     <label class="so-auth-label" for="so-auth-pass">密码</label>
-    <input type="password" id="so-auth-pass" class="so-auth-input" autocomplete="current-password" placeholder="密码" />
+    <input type="password" id="so-auth-pass" class="so-auth-input" name="so_opt_pass" autocomplete="off" placeholder="密码" />
     <div id="so-auth-err" class="so-auth-err" role="alert"></div>
     <button type="button" id="so-auth-btn" class="so-auth-btn">登录</button>
-  </div>
+  </form>
 </div>
 <div class="layout">
 
@@ -122,6 +123,11 @@
       <label class="global-date-bar-field"><span class="sr-only">开始</span><input type="date" id="date-range-start" /></label>
       <span class="global-date-bar-sep">至</span>
       <label class="global-date-bar-field"><span class="sr-only">结束</span><input type="date" id="date-range-end" /></label>
+      <div class="global-date-bar-presets" role="group" aria-label="日期快捷">
+        <button type="button" class="global-date-bar-quick" data-preset="today">今天</button>
+        <button type="button" class="global-date-bar-quick" data-preset="yesterday">昨天</button>
+        <button type="button" class="global-date-bar-quick" data-preset="last7">近7天</button>
+      </div>
       <button type="button" class="global-date-bar-apply" id="date-range-apply">应用</button>
       <span class="global-date-bar-hint" id="date-range-hint"></span>
     </div>
@@ -927,6 +933,48 @@
 
   </main>
 </div>
+<script>
+/* 与 js/so-auth.js 中 STORAGE_KEY 一致；重型脚本前执行，避免闪屏与密码框残留 */
+(function () {
+  var KEY = 'search_optimizer_0319_session';
+  var LEGACY = 'so_auth_user';
+  try {
+    var v = sessionStorage.getItem(KEY);
+    if (!v) {
+      var o = sessionStorage.getItem(LEGACY);
+      if (o) {
+        sessionStorage.setItem(KEY, o);
+        sessionStorage.removeItem(LEGACY);
+        v = o;
+      }
+    }
+    var loggedIn = !!v;
+    var ov = document.getElementById('so-auth-overlay');
+    var ly = document.querySelector('.layout');
+    var uEl = document.getElementById('so-auth-user');
+    var pEl = document.getElementById('so-auth-pass');
+    if (loggedIn) {
+      if (ov) {
+        var fm = ov.querySelector('form.so-auth-box');
+        if (fm) fm.remove();
+        ov.setAttribute('hidden', '');
+        ov.setAttribute('aria-hidden', 'true');
+        ov.style.display = 'none';
+      }
+      if (ly) ly.style.visibility = 'visible';
+    } else {
+      if (ly) ly.style.visibility = 'hidden';
+      if (ov) {
+        ov.removeAttribute('hidden');
+        ov.setAttribute('aria-hidden', 'false');
+        ov.style.display = 'flex';
+      }
+      if (uEl) { uEl.disabled = false; uEl.tabIndex = 0; }
+      if (pEl) { pEl.disabled = false; pEl.tabIndex = 0; }
+    }
+  } catch (e) {}
+})();
+</script>
 
 <script src="js/data.js"></script>
 <script src="js/adw_data.js"></script>
@@ -946,32 +994,58 @@
 <script>
 (function () {
   function wire() {
-    SOAuth.applyGate();
-    if (SOAuth.getUser()) return;
-    function send() {
-      var u = document.getElementById('so-auth-user').value;
-      var p = document.getElementById('so-auth-pass').value;
-      SOAuth.tryLogin(u, p).then(function (ok) {
-        var err = document.getElementById('so-auth-err');
-        if (ok) {
-          err.textContent = '';
-          SOAuth.showApp();
-        } else {
-          err.textContent = '用户名或密码错误';
-        }
-      });
+    if (!window.SOAuth) {
+      console.error('[auth] so-auth.js 未加载，请检查 js/so-auth.js 路径');
+      return;
     }
-    var btn = document.getElementById('so-auth-btn');
-    if (btn) btn.addEventListener('click', send);
-    var pw = document.getElementById('so-auth-pass');
-    if (pw) pw.addEventListener('keydown', function (e) { if (e.key === 'Enter') send(); });
+    try {
+      SOAuth.applyGate();
+    } catch (e) {
+      console.error('[auth] applyGate', e);
+    }
+    if (!SOAuth.getUser()) {
+      function send() {
+        var u = document.getElementById('so-auth-user');
+        var p = document.getElementById('so-auth-pass');
+        if (!u || !p) return;
+        SOAuth.tryLogin(u.value, p.value).then(function (ok) {
+          var err = document.getElementById('so-auth-err');
+          if (ok) {
+            if (err) err.textContent = '';
+            SOAuth.showApp();
+          } else {
+            if (err) err.textContent = '用户名或密码错误';
+          }
+        });
+      }
+      var btn = document.getElementById('so-auth-btn');
+      if (btn) btn.addEventListener('click', send);
+      var pw = document.getElementById('so-auth-pass');
+      if (pw) pw.addEventListener('keydown', function (e) { if (e.key === 'Enter') send(); });
+    }
   }
-  var lo = document.getElementById('so-auth-logout');
-  if (lo) lo.addEventListener('click', function () { SOAuth.logout(); });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
   else wire();
 })();
 </script>
-<script src="js/search-optimizer-0319.js?v=20260320sop1"></script>
+<script src="js/search-optimizer-0319.js?v=20260320dateUI1"></script>
+<script>
+/* 捕获阶段处理退出：不依赖 SOAuth，避免其它脚本报错导致无法退出 */
+(function () {
+  var KEY = 'search_optimizer_0319_session';
+  var LEGACY = 'so_auth_user';
+  document.addEventListener('click', function (e) {
+    var t = e.target && e.target.closest && e.target.closest('#so-auth-logout');
+    if (!t) return;
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      sessionStorage.removeItem(KEY);
+      sessionStorage.removeItem(LEGACY);
+    } catch (err) {}
+    window.location.reload();
+  }, true);
+})();
+</script>
 </body>
 </html>

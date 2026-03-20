@@ -168,17 +168,14 @@ function rowInDateRange(row, start, end) {
   return row.date >= start && row.date <= end;
 }
 
+/** 默认：今天（单日），夹在数据包 [startDate,endDate] 内；无 meta 时 end 先为占位，加载后会用 ADW_BUNDLE_END_EFFECTIVE 再夹一次 */
 function computeDefaultDateRange() {
   const ds = ADW_META.startDate;
   const de = ADW_META.endDate;
-  if (!_hasRealMeta) {
-    return { start: ds, end: de };
-  }
   const today = ymdLocal(new Date());
-  const yest = addDaysYmd(today, -1);
-  let pick = yest;
-  if (pick < ds || pick > de) pick = today;
-  if (pick < ds || pick > de) pick = de;
+  let pick = today;
+  if (pick > de) pick = de;
+  if (pick < ds) pick = ds;
   return { start: pick, end: pick };
 }
 
@@ -195,7 +192,7 @@ function saveDateRange(s, e) {
 }
 
 let DATE_RANGE = loadSavedDateRange();
-if (!_hasRealMeta && DATE_RANGE) {
+if (DATE_RANGE && DATE_RANGE.end >= '2090-01-01') {
   localStorage.removeItem(DATE_RANGE_KEY);
   DATE_RANGE = null;
 }
@@ -3312,6 +3309,55 @@ function syncSidebarDataLines() {
   }
 }
 
+function setGlobalDateRange(start, end, options = {}) {
+  const { updateInputs = true } = options;
+  recomputeBundleEndEffective();
+  let s = start;
+  let e = end;
+  if (s > e) { const t = s; s = e; e = t; }
+  s = clampYmd(s, ADW_META.startDate, ADW_BUNDLE_END_EFFECTIVE);
+  e = clampYmd(e, ADW_META.startDate, ADW_BUNDLE_END_EFFECTIVE);
+  DATE_RANGE = { start: s, end: e };
+  saveDateRange(s, e);
+  if (updateInputs) {
+    const dsi = document.getElementById('date-range-start');
+    const dei = document.getElementById('date-range-end');
+    if (dsi) dsi.value = s;
+    if (dei) dei.value = e;
+  }
+  rebuildMapsForDateRange(s, e);
+  refreshAllDashboardRenders();
+  syncSidebarDataLines();
+}
+
+function applyQuickDatePreset(kind) {
+  recomputeBundleEndEffective();
+  const ds0 = ADW_META.startDate;
+  const de0 = ADW_BUNDLE_END_EFFECTIVE;
+  const todayWall = ymdLocal(new Date());
+  let ref = todayWall;
+  if (ref > de0) ref = de0;
+  if (ref < ds0) ref = ds0;
+  let s;
+  let e;
+  if (kind === 'today') {
+    s = e = ref;
+  } else if (kind === 'yesterday') {
+    const y = addDaysYmd(todayWall, -1);
+    const yc = clampYmd(y, ds0, de0);
+    s = e = yc;
+  } else if (kind === 'last7') {
+    e = ref;
+    s = addDaysYmd(e, -6);
+    if (s < ds0) s = ds0;
+    s = clampYmd(s, ds0, de0);
+    e = clampYmd(e, ds0, de0);
+  } else {
+    return;
+  }
+  setGlobalDateRange(s, e, { updateInputs: true });
+}
+
 let _globalDateBarBound = false;
 function initGlobalDateRangeBar() {
   const ds = document.getElementById('date-range-start');
@@ -3325,7 +3371,7 @@ function initGlobalDateRangeBar() {
   de.value = DATE_RANGE.end;
   const hint = document.getElementById('date-range-hint');
   if (hint) {
-    hint.textContent = `仅在已加载数据内筛选。无 date 的行仅当「全包」时计入（起≤${ADW_META.startDate} 且 止≥${ADW_BUNDLE_END_EFFECTIVE}）。无 ADW_CAMP_* 的系列 Spend 为包内汇总、不随日期变。`;
+    hint.textContent = `默认「今天」单日（按数据包截断）。快捷：昨天 / 近7天。无 date 的行仅「全包」计入（起≤${ADW_META.startDate} 且 止≥${ADW_BUNDLE_END_EFFECTIVE}）。无 ADW_CAMP_* 的 Spend 为包内汇总。`;
   }
   syncSidebarDataLines();
   if (_globalDateBarBound) return;
@@ -3334,15 +3380,10 @@ function initGlobalDateRangeBar() {
     let s = ds.value;
     let e = de.value;
     if (!s || !e) return;
-    if (s > e) { const t = s; s = e; e = t; }
-    recomputeBundleEndEffective();
-    s = clampYmd(s, ADW_META.startDate, ADW_BUNDLE_END_EFFECTIVE);
-    e = clampYmd(e, ADW_META.startDate, ADW_BUNDLE_END_EFFECTIVE);
-    DATE_RANGE = { start: s, end: e };
-    saveDateRange(s, e);
-    rebuildMapsForDateRange(s, e);
-    refreshAllDashboardRenders();
-    syncSidebarDataLines();
+    setGlobalDateRange(s, e, { updateInputs: true });
+  });
+  document.querySelectorAll('.global-date-bar-quick[data-preset]').forEach(b => {
+    b.addEventListener('click', () => applyQuickDatePreset(b.getAttribute('data-preset')));
   });
 }
 

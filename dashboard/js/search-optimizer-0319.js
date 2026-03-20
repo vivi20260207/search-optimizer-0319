@@ -117,6 +117,35 @@ regAsset('Ppt-web-US-2.5-Pmax-1.20-homepage', typeof ADW_PPT_US_PMAX_ASSETS !== 
 const _hasRealMeta = (typeof ADW_DATA_META !== 'undefined');
 const ADW_META = _hasRealMeta ? ADW_DATA_META : { startDate: '2026-02-01', endDate: '2099-12-31', generatedAt: '' };
 
+/** 用于「全包」判断与日筛选：有 ADW_DATA_META 时用 meta；否则从已加载行里推断最大 date */
+let ADW_BUNDLE_END_EFFECTIVE = ADW_META.endDate;
+function recomputeBundleEndEffective() {
+  if (_hasRealMeta) {
+    ADW_BUNDLE_END_EFFECTIVE = ADW_META.endDate;
+    return;
+  }
+  let maxD = '';
+  const bump = (rows) => {
+    if (!Array.isArray(rows)) return;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (r && r.date && typeof r.date === 'string' && r.date > maxD) maxD = r.date;
+    }
+  };
+  Object.values(CAMP_DAILY_MAP).forEach(bump);
+  Object.values(RAW_KW_BY_CAMP).forEach(bump);
+  Object.values(RAW_ST_BY_CAMP).forEach(bump);
+  Object.values(RAW_DEV_BY_CAMP).forEach(bump);
+  Object.values(RAW_GENDER_BY_CAMP).forEach(bump);
+  Object.values(RAW_AGE_BY_CAMP).forEach(bump);
+  ADW_BUNDLE_END_EFFECTIVE = maxD || ADW_META.endDate;
+}
+
+/** 与文案一致：无 date 的静态行仅在此区间计入 */
+function isFullBundleDateRange(start, end) {
+  return start <= ADW_META.startDate && end >= ADW_BUNDLE_END_EFFECTIVE;
+}
+
 function ymdLocal(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -133,11 +162,9 @@ function clampYmd(ymd, minY, maxY) {
   if (ymd > maxY) return maxY;
   return ymd;
 }
-function isFullDataRange(start, end) {
-  return start <= ADW_META.startDate && end >= ADW_META.endDate;
-}
 function rowInDateRange(row, start, end) {
-  if (!row || !row.date) return true;
+  if (!row) return false;
+  if (!row.date) return isFullBundleDateRange(start, end);
   return row.date >= start && row.date <= end;
 }
 
@@ -434,6 +461,14 @@ const CAMP_DAILY_MAP = {};
       RAW_AGE_BY_CAMP[camp] = arr.map(r => ({ ...r }));
     });
   }
+
+  recomputeBundleEndEffective();
+  DATE_RANGE.start = clampYmd(DATE_RANGE.start, ADW_META.startDate, ADW_BUNDLE_END_EFFECTIVE);
+  DATE_RANGE.end = clampYmd(DATE_RANGE.end, ADW_META.startDate, ADW_BUNDLE_END_EFFECTIVE);
+  if (DATE_RANGE.start > DATE_RANGE.end) {
+    const t = DATE_RANGE.start; DATE_RANGE.start = DATE_RANGE.end; DATE_RANGE.end = t;
+  }
+  saveDateRange(DATE_RANGE.start, DATE_RANGE.end);
 
   rebuildMapsForDateRange(DATE_RANGE.start, DATE_RANGE.end);
 
@@ -966,7 +1001,7 @@ function renderDrillDown() {
       <td class="bold">${hasChildren ? '<span class="arrow">▶</span>' : '<span class="arrow" style="opacity:.2">▶</span>'}${U.campShortName(c.name)}</td>
       <td>${U.badge(c.type, c.type === 'Search' ? 'search' : 'display')} ${U.badge(c.bidding, 'neutral')}</td>
       <td><span class="muted">${U.getKeywordType(c.name)}</span></td>
-      <td class="num bold">${U.fmtK(Math.round(c.spend))}</td>
+      <td class="num bold" title="${c._noCampDailySlice ? '该系列无日维度花费包（无 ADW_CAMP_*），Spend/Conv 为导入包汇总，不随分析日期变化' : ''}">${U.fmtK(Math.round(c.spend))}${c._noCampDailySlice ? ' <span class="muted" style="font-size:10px;font-weight:400;">汇总</span>' : ''}</td>
       <td class="num">${c.newPayUsers}</td>
       <td class="num">${U.fmt(c.newCPA)}</td>
       <td class="num bold ${U.colorClass(c.roas, 1, 0.5)}">${U.fmt(c.roas)}</td>
@@ -3264,7 +3299,7 @@ function syncSidebarDataLines() {
   const filt = document.getElementById('sidebar-filter-line');
   const gen = document.getElementById('sidebar-generated-line');
   if (bundle) {
-    bundle.textContent = `数据包: ${ADW_META.startDate} ~ ${ADW_META.endDate}（最早自 02-01，右端为本次拉取截止日）`;
+    bundle.textContent = `数据包: ${ADW_META.startDate} ~ ${ADW_BUNDLE_END_EFFECTIVE}（全包筛选: 起≤${ADW_META.startDate} 且 止≥${ADW_BUNDLE_END_EFFECTIVE}）`;
   }
   if (filt) {
     filt.textContent = DATE_RANGE.start === DATE_RANGE.end
@@ -3283,13 +3318,14 @@ function initGlobalDateRangeBar() {
   const de = document.getElementById('date-range-end');
   const btn = document.getElementById('date-range-apply');
   if (!ds || !de || !btn) return;
+  recomputeBundleEndEffective();
   ds.min = de.min = ADW_META.startDate;
-  ds.max = de.max = ADW_META.endDate;
+  ds.max = de.max = ADW_BUNDLE_END_EFFECTIVE;
   ds.value = DATE_RANGE.start;
   de.value = DATE_RANGE.end;
   const hint = document.getElementById('date-range-hint');
   if (hint) {
-    hint.textContent = `仅在已加载数据内筛选，不请求接口。无日期的静态表仅在选择「全包」区间时计入（${ADW_META.startDate} ~ ${ADW_META.endDate}）。`;
+    hint.textContent = `仅在已加载数据内筛选。无 date 的行仅当「全包」时计入（起≤${ADW_META.startDate} 且 止≥${ADW_BUNDLE_END_EFFECTIVE}）。无 ADW_CAMP_* 的系列 Spend 为包内汇总、不随日期变。`;
   }
   syncSidebarDataLines();
   if (_globalDateBarBound) return;
@@ -3299,8 +3335,9 @@ function initGlobalDateRangeBar() {
     let e = de.value;
     if (!s || !e) return;
     if (s > e) { const t = s; s = e; e = t; }
-    s = clampYmd(s, ADW_META.startDate, ADW_META.endDate);
-    e = clampYmd(e, ADW_META.startDate, ADW_META.endDate);
+    recomputeBundleEndEffective();
+    s = clampYmd(s, ADW_META.startDate, ADW_BUNDLE_END_EFFECTIVE);
+    e = clampYmd(e, ADW_META.startDate, ADW_BUNDLE_END_EFFECTIVE);
     DATE_RANGE = { start: s, end: e };
     saveDateRange(s, e);
     rebuildMapsForDateRange(s, e);
@@ -4251,6 +4288,8 @@ function renderNegKWCenter() {
   async function renderAIKB() {
     const listEl = document.getElementById('ai-kb-list');
     if (!listEl) return;
+
+    if (typeof SBSync !== 'undefined' && SBSync.clearKnowledgeCache) SBSync.clearKnowledgeCache();
 
     if (typeof SBSync === 'undefined' || !SBSync.getKnowledge) {
       listEl.innerHTML = '<div class="muted" style="text-align:center;padding:40px;">Supabase 未连接</div>';

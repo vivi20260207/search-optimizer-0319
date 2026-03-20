@@ -9,5 +9,6 @@
   {"category":"ai_sop","content":"【B9/B10】关键词结构：同时投放品牌词、功能词、竞品词；各类型占比因产品而异（例如 livu 相关竞品词占比较高）。竞品词投放的单独 ROAS 目标目前未明确，分析时勿臆造竞品线 ROAS。","source":"user_correction","tags":["b9","b10","competitor","brand","keyword_mix"]},
   {"category":"ai_sop","content":"【B11】核心转化事件：各产品均以 purchase 为主，分析口径统一按购买转化。","source":"user_correction","tags":["b11","conversion","purchase"]},
   {"category":"ai_sop","content":"【B12】扩预算规则：当周多数时间「总 ROAS」与「新 iOS 付费用户 CPA」均达标时可加预算；常规每次约上调原预算的 20%；若单 Campaign 日预算低于约 100 美元，可每次约加 50 美元。避免过频、过大调整以免打乱智能出价学习。","source":"user_correction","tags":["b12","budget","scaling","tcpa"]},
-  {"category":"ai_sop","content":"【B13】优化理念：先保证 ROI（利润/效率），再谈放量规模；不同阶段仍遵循「ROI 优先」。","source":"user_correction","tags":["b13","philosophy","roi_first"]}
+  {"category":"ai_sop","content":"【B13】优化理念：先保证 ROI（利润/效率），再谈放量规模；不同阶段仍遵循「ROI 优先」。","source":"user_correction","tags":["b13","philosophy","roi_first"]},
+  {"category":"ai_negkw_rule","content":"【正负关键词冲突策略】广泛匹配正向词 + 完全匹配否定词的组合不一定是配置错误，可能是刻意策略：用广泛匹配探索长尾流量，同时用完全匹配否定精准拦截已知低效的核心词。\n\n判断流程：\n1. 确认否定词匹配类型 — 若为 [完全匹配]，仅拦截该精确查询及近似变体，带前缀/后缀的长尾词仍可触发广告\n2. 查搜索词报表 — 检查该正向词下的变体词（带后缀/前缀的长尾词）回收表现\n3. 若变体词回收达标 → 保留现有组合，定期复检\n4. 若变体词回收也差 → 将否定匹配类型从 [完全匹配] 升级为「词组匹配」甚至广泛匹配，彻底切断无效流量\n\n注意：现代 Google Ads 的完全匹配否定词也会拦截近似变体（拼写变体、单复数、语序调整），实际拦截范围略大于字面精确匹配。","source":"user_correction","tags":["negkw","conflict","broad_match","exact_negative","strategy","search_term_report"]}
 ]

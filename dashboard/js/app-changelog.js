@@ -41,11 +41,21 @@ const FIELD_LABELS = {
 
 const RAW_DATA = (typeof ADW_APP_CHANGE_HISTORY !== 'undefined' && Array.isArray(ADW_APP_CHANGE_HISTORY))
   ? ADW_APP_CHANGE_HISTORY : [];
+const ACCOUNT_MAP = (typeof ACCOUNT_OWNER_MAP !== 'undefined' && ACCOUNT_OWNER_MAP) ? ACCOUNT_OWNER_MAP : {};
 
-// Normalize: merge "AD" into "广告"
+// Normalize data and enrich with account mapping.
 const CHANGE_LOG = RAW_DATA.map(e => {
-  if (e.resourceType === 'AD') return { ...e, resourceType: '广告' };
-  return e;
+  const accountId = String(e.accountId || '');
+  const map = ACCOUNT_MAP[accountId] || {};
+  const resourceType = e.resourceType === 'AD' ? '广告' : e.resourceType;
+  return {
+    ...e,
+    resourceType,
+    product: map.product || '',
+    optimizer: map.optimizer || '',
+    products: Array.isArray(map.products) ? map.products : (map.product ? [map.product] : []),
+    optimizers: Array.isArray(map.optimizers) ? map.optimizers : (map.optimizer ? [map.optimizer] : [])
+  };
 });
 
 function formatDateTime(dt) {
@@ -133,6 +143,28 @@ function renderChangeLog() {
       }).join('');
   }
 
+  // Product filter
+  const productFilter = $('cl-filter-product');
+  const products = [...new Set(CHANGE_LOG.flatMap(e => e.products || []).filter(Boolean))].sort();
+  if (productFilter) {
+    productFilter.innerHTML = '<option value="all">全部产品 (' + products.length + ')</option>' +
+      products.map(p => {
+        const cnt = CHANGE_LOG.filter(e => (e.products || []).includes(p)).length;
+        return `<option value="${p}">${p} (${cnt})</option>`;
+      }).join('');
+  }
+
+  // Optimizer filter
+  const optimizerFilter = $('cl-filter-optimizer');
+  const optimizers = [...new Set(CHANGE_LOG.flatMap(e => e.optimizers || []).filter(Boolean))].sort();
+  if (optimizerFilter) {
+    optimizerFilter.innerHTML = '<option value="all">全部优化师 (' + optimizers.length + ')</option>' +
+      optimizers.map(o => {
+        const cnt = CHANGE_LOG.filter(e => (e.optimizers || []).includes(o)).length;
+        return `<option value="${o}">${o} (${cnt})</option>`;
+      }).join('');
+  }
+
   const campFilter = $('cl-filter-camp');
   const camps = [...new Set(CHANGE_LOG.map(e => e.campaign).filter(Boolean))].sort();
   campFilter.innerHTML = '<option value="all">全部 Campaign (' + camps.length + ')</option>' +
@@ -192,6 +224,8 @@ function renderChangeLog() {
   campFilter.addEventListener('change', filterChangeLog);
   typeFilter.addEventListener('change', filterChangeLog);
   if (accountFilter) accountFilter.addEventListener('change', filterChangeLog);
+  if (productFilter) productFilter.addEventListener('change', filterChangeLog);
+  if (optimizerFilter) optimizerFilter.addEventListener('change', filterChangeLog);
   $('cl-filter-op').addEventListener('change', filterChangeLog);
   $('cl-search').addEventListener('input', filterChangeLog);
   $('cl-filter-date-start').addEventListener('change', filterChangeLog);
@@ -200,6 +234,8 @@ function renderChangeLog() {
 
 function filterChangeLog() {
   const accountVal = $('cl-filter-account') ? $('cl-filter-account').value : 'all';
+  const productVal = $('cl-filter-product') ? $('cl-filter-product').value : 'all';
+  const optimizerVal = $('cl-filter-optimizer') ? $('cl-filter-optimizer').value : 'all';
   const campVal = $('cl-filter-camp').value;
   const typeVal = $('cl-filter-type').value;
   const opVal = $('cl-filter-op').value;
@@ -209,6 +245,8 @@ function filterChangeLog() {
 
   let filtered = CHANGE_LOG;
   if (accountVal !== 'all') filtered = filtered.filter(e => e.accountId === accountVal);
+  if (productVal !== 'all') filtered = filtered.filter(e => (e.products || []).includes(productVal));
+  if (optimizerVal !== 'all') filtered = filtered.filter(e => (e.optimizers || []).includes(optimizerVal));
   if (campVal !== 'all') filtered = filtered.filter(e => e.campaign === campVal);
   if (typeVal !== 'all') {
     if (typeVal === '__bid__') {
@@ -230,7 +268,9 @@ function filterChangeLog() {
       (e.campaign || '').toLowerCase().includes(searchVal) ||
       (e.adGroup || '').toLowerCase().includes(searchVal) ||
       (e.userEmail || '').toLowerCase().includes(searchVal) ||
-      (e.resourceType || '').toLowerCase().includes(searchVal)
+      (e.resourceType || '').toLowerCase().includes(searchVal) ||
+      (e.product || '').toLowerCase().includes(searchVal) ||
+      (e.optimizer || '').toLowerCase().includes(searchVal)
     );
   }
 

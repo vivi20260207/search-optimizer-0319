@@ -217,7 +217,7 @@
     /* ─── Settings ─── */
 
     async _syncSettings() {
-      var keys = ['gemini_api_key', 'gemini_model'];
+      var keys = [];
 
       if (!localStorage.getItem(LS.mSet)) {
         try {

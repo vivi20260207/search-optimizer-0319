@@ -701,6 +701,46 @@ function renderDrillDown() {
 // ═══════════════════════════════════════
 let ALL_ANOMALIES = [];
 
+// ── Gemini API: 解析 generateContent JSON（处理安全拦截、空 parts、多段文本）──
+function parseGeminiGenerateContent(data) {
+  if (!data) return { ok: false, text: '', err: '空响应' };
+  const pf = data.promptFeedback;
+  if (pf && pf.blockReason) {
+    const msg = pf.blockReasonMessage ? ` (${pf.blockReasonMessage})` : '';
+    return { ok: false, text: '', err: `提示被拦截: ${pf.blockReason}${msg}` };
+  }
+  const cands = data.candidates;
+  if (!cands || cands.length === 0) {
+    return { ok: false, text: '', err: '无 candidates（可能被安全策略拦截或配额异常）。可换模型或缩短上下文。' };
+  }
+  const c0 = cands[0];
+  const parts = c0.content && c0.content.parts;
+  let text = '';
+  if (Array.isArray(parts)) {
+    text = parts.map(p => (p && p.text) ? String(p.text) : '').join('');
+  }
+  const fr = c0.finishReason;
+  if (text && text.trim()) {
+    return { ok: true, text: text.trim(), err: null };
+  }
+  const frHint = {
+    SAFETY: '输出被安全策略拦截（无正文）。可缩短诊断上下文或换种问法。',
+    RECITATION: '输出被引用策略拦截。',
+    MAX_TOKENS: '输出被截断为空，可缩短问题或联系开发调大 maxOutputTokens。',
+    PROHIBITED_CONTENT: '违禁内容，未返回正文。',
+    OTHER: '模型结束但无正文（OTHER）。',
+    STOP: 'finishReason=STOP 但无文本，可重试或换模型。'
+  };
+  const hint = frHint[fr] || `无文本；finishReason=${fr || '未知'}`;
+  return { ok: false, text: '', err: hint };
+}
+
+function clipGeminiContext(s, maxLen) {
+  const max = maxLen || 14000;
+  if (!s || s.length <= max) return s;
+  return s.slice(0, max) + '\n\n[…上下文已截断]';
+}
+
 // ── RCA Notes Storage (localStorage) ──
 const RCA_NOTES_KEY = 'rca_diag_notes';
 function loadRCANotes() { try { return JSON.parse(localStorage.getItem(RCA_NOTES_KEY) || '{}'); } catch { return {}; } }
@@ -763,9 +803,13 @@ async function callGeminiForRCA(userQuestion, rcaContext, aid, renderFn) {
       renderFn(); return;
     }
     const data = await resp.json();
-    const aiText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '（无返回）';
+    const parsed = parseGeminiGenerateContent(data);
     deleteLastRCASystemNote(aid);
-    addRCANote(aid, `🤖 ${aiText}`, 'system');
+    if (parsed.ok) {
+      addRCANote(aid, `🤖 ${parsed.text}`, 'system');
+    } else {
+      addRCANote(aid, `❌ AI 无有效输出: ${parsed.err}`, 'system');
+    }
     renderFn();
     setTimeout(() => {
       const thread = document.getElementById('rca-drawer-notes');
@@ -2559,6 +2603,8 @@ function renderAdCopy() {
 // 变更日志模块
 // ═══════════════════════════════════════
 const CHANGE_LOG = (typeof ADW_CHANGE_HISTORY !== 'undefined' && Array.isArray(ADW_CHANGE_HISTORY)) ? ADW_CHANGE_HISTORY : [];
+/** true = adw_data_changelog.js 未执行（404、路径错误或脚本被拦截） */
+const CHANGE_LOG_SCRIPT_MISSING = typeof ADW_CHANGE_HISTORY === 'undefined';
 
 function formatChangeDetail(entry) {
   if (!entry.details || entry.details.length === 0) {
@@ -2624,8 +2670,16 @@ function typeBadge(t) {
 
 function renderChangeLog() {
   if (CHANGE_LOG.length === 0) {
-    U.html('changelog-kpis', '<div class="kpi-card"><div class="kpi-label">变更记录</div><div class="kpi-value clr-muted">0</div><div class="kpi-sub">暂无数据，请运行 fetch_change_history.py</div></div>');
-    U.html('changelog-tbody', '<tr><td colspan="8" class="muted" style="text-align:center;padding:40px;">暂无变更历史数据</td></tr>');
+    const navBadge = U.el('nav-change-count');
+    if (navBadge) navBadge.textContent = '0';
+    let sub = '暂无数据，请在本机运行 <code style="font-size:11px;">fetch_change_history.py</code> 生成 <code style="font-size:11px;">adw_data_changelog.js</code> 后重新部署。';
+    let tbodyMsg = '暂无变更历史数据';
+    if (CHANGE_LOG_SCRIPT_MISSING) {
+      sub = '<strong style="color:#b45309;">未加载到变更数据文件</strong>：请打开开发者工具 → Network，确认 <code style="font-size:11px;">adw_data_changelog.js</code> 是否为 200（若 404，检查部署目录是否包含该文件、路径是否为 /dashboard/js/…）。强制刷新 Ctrl+Shift+R 或清除缓存后再试。';
+      tbodyMsg = '未检测到 ADW_CHANGE_HISTORY（changelog 脚本可能未加载）';
+    }
+    U.html('changelog-kpis', `<div class="kpi-card"><div class="kpi-label">变更记录</div><div class="kpi-value clr-muted">0</div><div class="kpi-sub" style="line-height:1.5;">${sub}</div></div>`);
+    U.html('changelog-tbody', `<tr><td colspan="8" class="muted" style="text-align:center;padding:40px;max-width:720px;margin:0 auto;">${tbodyMsg}</td></tr>`);
     return;
   }
 
@@ -3048,10 +3102,14 @@ function renderNegKWCenter() {
       }
 
       const data = await resp.json();
-      const aiText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '（AI 未返回有效内容）';
+      const parsed = parseGeminiGenerateContent(data);
 
       deleteLastSystemNote(diagId);
-      addNote(diagId, `🤖 AI 分析:\n${aiText}`, 'system');
+      if (parsed.ok) {
+        addNote(diagId, `🤖 AI 分析:\n${parsed.text}`, 'system');
+      } else {
+        addNote(diagId, `❌ AI 无有效输出: ${parsed.err}`, 'system');
+      }
       renderFn();
       setTimeout(() => {
         const thread = U.el('diag-note-thread');
@@ -3487,4 +3545,42 @@ function renderNegKWCenter() {
     }
     setTimeout(() => { modal.style.display = 'none'; }, 1500);
   });
+})();
+
+// ═══════════════════════════════════════
+// 回传调整记录（纯文本，localStorage）
+// ═══════════════════════════════════════
+(function initPostbackLog() {
+  const POSTBACK_LOG_KEY = 'POSTBACK_LOG_TEXT';
+  const ta = document.getElementById('postback-log-textarea');
+  const statusEl = document.getElementById('postback-log-save-status');
+  if (!ta || !statusEl) return;
+
+  try {
+    const saved = localStorage.getItem(POSTBACK_LOG_KEY);
+    if (saved != null) ta.value = saved;
+  } catch (e) {
+    console.warn('[PostbackLog] load failed', e);
+  }
+
+  let saveTimer = null;
+  function scheduleSave() {
+    if (saveTimer) clearTimeout(saveTimer);
+    statusEl.textContent = '编辑中…';
+    statusEl.style.color = '#64748b';
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      try {
+        localStorage.setItem(POSTBACK_LOG_KEY, ta.value);
+        statusEl.textContent = '已自动保存 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        statusEl.style.color = '#10b981';
+      } catch (e) {
+        console.warn('[PostbackLog] save failed', e);
+        statusEl.textContent = '保存失败（存储已满或权限）';
+        statusEl.style.color = '#ef4444';
+      }
+    }, 500);
+  }
+
+  ta.addEventListener('input', scheduleSave);
 })();

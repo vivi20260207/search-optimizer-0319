@@ -57,6 +57,9 @@
         <span class="nav-icon">📋</span> 变更日志
         <span class="nav-badge" id="nav-change-count">0</span>
       </li>
+      <li class="nav-item" data-view="postback-log">
+        <span class="nav-icon">📡</span> 回传调整记录
+      </li>
 
       <li class="nav-group-label">例行检查</li>
       <li class="nav-item" data-view="landing-page">
@@ -715,6 +718,25 @@
       <!-- (Negative Keywords moved to dedicated view: neg-kw-center) -->
     </section>
 
+    <section class="view-section" id="view-postback-log">
+      <div class="page-header">
+        <div>
+          <h2>回传调整记录</h2>
+          <span class="page-header-meta">手动记录转化回传、出价目标等调整；内容仅保存在本机浏览器（localStorage），换设备或清除站点数据会丢失。</span>
+        </div>
+        <span class="data-tag" style="background:rgba(59,130,246,.15);color:#3b82f6;">本地笔记</span>
+      </div>
+      <div class="card" style="flex:1;display:flex;flex-direction:column;min-height:calc(100vh - 220px);">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <h3 style="margin:0;">纯文本记录</h3>
+          <span id="postback-log-save-status" class="muted" style="font-size:12px;">—</span>
+        </div>
+        <div class="card-body" style="flex:1;display:flex;flex-direction:column;padding:12px 16px 16px;">
+          <textarea id="postback-log-textarea" placeholder="在此自由书写回传/出价等调整记录…&#10;&#10;示例：&#10;2026-03-20 调整 MMP 事件映射，purchase 延迟从 24h 改为 48h …" style="width:100%;flex:1;min-height:420px;resize:vertical;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;font-size:13px;line-height:1.55;padding:12px;border:1px solid var(--border, #e5e7eb);border-radius:8px;box-sizing:border-box;background:var(--card-bg, #fff);color:var(--text, #111827);"></textarea>
+        </div>
+      </div>
+    </section>
+
   </main>
 </div>
 
@@ -747,10 +769,10 @@
 <script src="js/adw_data_daily.js"></script>
 <script src="js/adw_data_st.js"></script>
 <script src="js/adw_data_assets.js"></script>
-<script src="js/adw_data_changelog.js?v=20260319b"></script>
+<script src="js/adw_data_changelog.js?v=20260320b"></script>
 <script src="js/adw_data_negkw.js?v=20260319b"></script>
 <script src="js/utils-0319.js"></script>
 <script src="js/engine-0319.js"></script>
-<script src="js/search-optimizer-0319.js?v=20260319f"></script>
+<script src="js/search-optimizer-0319.js?v=20260320b"></script>
 </body>
 </html>

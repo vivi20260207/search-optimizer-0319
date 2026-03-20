@@ -8,8 +8,8 @@ from google.ads.googleads.client import GoogleAdsClient
 from google.ads.googleads.errors import GoogleAdsException
 
 OUTPUT_PATH = "dashboard/js/adw_data_changelog.js"
-START_DATE = "2026-02-19"
-END_DATE   = "2026-03-19"
+START_DATE = "2026-02-20"
+END_DATE   = "2026-03-20"
 
 ACCOUNTS = [
     "9077174845", "6492700111", "2302435452", "8875844595",

@@ -12,7 +12,7 @@ from google.ads.googleads.errors import GoogleAdsException
 
 OUTPUT_PATH = "dashboard/js/adw_data_app_changelog.js"
 START_DATE = "2026-02-19"
-END_DATE   = "2026-03-19"
+END_DATE   = "2026-03-20"
 
 MCC_CONFIGS = [
     "google-ads-app.yaml",           # MCC 7767893962

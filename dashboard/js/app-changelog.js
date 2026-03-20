@@ -136,7 +136,9 @@ function renderChangeLog() {
   const accountFilter = $('cl-filter-account');
   const accounts = [...new Set(CHANGE_LOG.map(e => e.accountId).filter(Boolean))].sort();
   if (accountFilter) {
+    const unmappedAccountCount = CHANGE_LOG.filter(e => !(e.product || e.optimizer)).length;
     accountFilter.innerHTML = '<option value="all">全部账户 (' + accounts.length + ')</option>' +
+      '<option value="__unmapped__">未映射账户 (' + unmappedAccountCount + ')</option>' +
       accounts.map(a => {
         const cnt = CHANGE_LOG.filter(e => e.accountId === a).length;
         return `<option value="${a}">${a} (${cnt})</option>`;
@@ -148,6 +150,7 @@ function renderChangeLog() {
   const products = [...new Set(CHANGE_LOG.flatMap(e => e.products || []).filter(Boolean))].sort();
   if (productFilter) {
     productFilter.innerHTML = '<option value="all">全部产品 (' + products.length + ')</option>' +
+      `<option value="__unmapped__">未映射产品 (${CHANGE_LOG.filter(e => !e.product).length})</option>` +
       products.map(p => {
         const cnt = CHANGE_LOG.filter(e => (e.products || []).includes(p)).length;
         return `<option value="${p}">${p} (${cnt})</option>`;
@@ -159,6 +162,7 @@ function renderChangeLog() {
   const optimizers = [...new Set(CHANGE_LOG.flatMap(e => e.optimizers || []).filter(Boolean))].sort();
   if (optimizerFilter) {
     optimizerFilter.innerHTML = '<option value="all">全部优化师 (' + optimizers.length + ')</option>' +
+      `<option value="__unmapped__">未映射优化师 (${CHANGE_LOG.filter(e => !e.optimizer).length})</option>` +
       optimizers.map(o => {
         const cnt = CHANGE_LOG.filter(e => (e.optimizers || []).includes(o)).length;
         return `<option value="${o}">${o} (${cnt})</option>`;
@@ -244,9 +248,21 @@ function filterChangeLog() {
   const dateEnd = $('cl-filter-date-end').value;
 
   let filtered = CHANGE_LOG;
-  if (accountVal !== 'all') filtered = filtered.filter(e => e.accountId === accountVal);
-  if (productVal !== 'all') filtered = filtered.filter(e => (e.products || []).includes(productVal));
-  if (optimizerVal !== 'all') filtered = filtered.filter(e => (e.optimizers || []).includes(optimizerVal));
+  if (accountVal !== 'all') {
+    filtered = accountVal === '__unmapped__'
+      ? filtered.filter(e => !(e.product || e.optimizer))
+      : filtered.filter(e => e.accountId === accountVal);
+  }
+  if (productVal !== 'all') {
+    filtered = productVal === '__unmapped__'
+      ? filtered.filter(e => !e.product)
+      : filtered.filter(e => (e.products || []).includes(productVal));
+  }
+  if (optimizerVal !== 'all') {
+    filtered = optimizerVal === '__unmapped__'
+      ? filtered.filter(e => !e.optimizer)
+      : filtered.filter(e => (e.optimizers || []).includes(optimizerVal));
+  }
   if (campVal !== 'all') filtered = filtered.filter(e => e.campaign === campVal);
   if (typeVal !== 'all') {
     if (typeVal === '__bid__') {

@@ -205,6 +205,17 @@ body {
   font-size: 11px;
   color: var(--text3);
   line-height: 1.4;
+  cursor: help;
+}
+
+/* 知识库 / 回传记录等：不依赖全局日期筛选，隐藏顶栏与侧栏「数据包」技术说明 */
+body.chrome-no-data-context #global-date-bar {
+  display: none !important;
+}
+body.chrome-no-data-context .sidebar-footer #sidebar-bundle-line,
+body.chrome-no-data-context .sidebar-footer #sidebar-filter-line,
+body.chrome-no-data-context .sidebar-footer #sidebar-generated-line {
+  display: none !important;
 }
 
 /* ─── Page Header ─── */

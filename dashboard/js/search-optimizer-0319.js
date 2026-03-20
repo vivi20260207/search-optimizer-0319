@@ -497,6 +497,12 @@ const CAMP_DAILY_MAP = {};
 // ═══════════════════════════════════════
 // NAVIGATION
 // ═══════════════════════════════════════
+/** 知识库、回传记录等页不展示全局日期条与侧栏数据包说明（避免干扰非报表场景） */
+function syncChromeForView(viewKey) {
+  const minimal = viewKey === 'knowledge' || viewKey === 'postback-log';
+  document.body.classList.toggle('chrome-no-data-context', minimal);
+}
+
 document.querySelectorAll('.nav-item').forEach(item => {
   item.addEventListener('click', () => {
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -505,6 +511,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     const viewId = 'view-' + item.dataset.view;
     const view = document.getElementById(viewId);
     if (view) view.classList.add('active');
+    syncChromeForView(item.dataset.view || '');
   });
 });
 
@@ -3372,7 +3379,8 @@ function initGlobalDateRangeBar() {
   de.value = DATE_RANGE.end;
   const hint = document.getElementById('date-range-hint');
   if (hint) {
-    hint.textContent = `默认「今天」单日（按数据包截断）。快捷：昨天 / 近7天。无 date 的行仅「全包」计入（起≤${ADW_META.startDate} 且 止≥${ADW_BUNDLE_END_EFFECTIVE}）。无 ADW_CAMP_* 的 Spend 为包内汇总。`;
+    hint.textContent = '改日期后点「应用」。悬停本行可看数据口径说明。';
+    hint.title = `默认「今天」单日（按数据包截断）。快捷：昨天 / 近7天。无 date 的行仅「全包」计入（起≤${ADW_META.startDate} 且 止≥${ADW_BUNDLE_END_EFFECTIVE}）。无 ADW_CAMP_* 的 Spend 为包内汇总。`;
   }
   syncSidebarDataLines();
   if (_globalDateBarBound) return;
@@ -3393,6 +3401,8 @@ try {
   initAdCopyModule();
   refreshAllDashboardRenders();
   initGlobalDateRangeBar();
+  const _navActive = document.querySelector('.nav-item.active');
+  syncChromeForView(_navActive && _navActive.dataset.view ? _navActive.dataset.view : '');
   console.log('[INIT OK] SEARCH_CAMPS:', SEARCH_CAMPS.length, 'DATE_RANGE:', JSON.stringify(DATE_RANGE));
 } catch (e) {
   console.error('[INIT FATAL]', e);

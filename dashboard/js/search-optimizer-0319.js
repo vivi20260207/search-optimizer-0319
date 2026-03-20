@@ -4471,24 +4471,64 @@ function renderNegKWCenter() {
     });
   });
 
-  // ── Add knowledge ──
+  // ── Add knowledge (modal form) ──
   const addBtn = document.getElementById('kb-add-btn');
   if (addBtn) {
-    addBtn.addEventListener('click', () => {
+    let modalEl = null;
+    function openAddModal() {
       const me = curUser();
       if (!me) { alert('请先登录'); return; }
-      const content = prompt('输入知识内容：');
-      if (!content || !content.trim()) return;
-      const catChoice = prompt('选择分类（输入数字）：\n1. 品牌词定义\n2. 否定词规则\n3. Campaign 规则\n4. 用户纠正/经验', '4');
-      const catMap = { '1': 'brand_keyword', '2': 'negkw_rule', '3': 'campaign_rule', '4': 'user_correction' };
-      const cat = catMap[catChoice] || 'user_correction';
-      const prodChoice = prompt('关联产品（可留空）：\n1. Ft  2. Pu  3. Ppt\n输入数字或直接回车跳过', '');
-      const prodMap = { '1': 'ft', '2': 'pu', '3': 'ppt' };
-      const product = prodMap[prodChoice] || null;
+      if (modalEl) { modalEl.remove(); modalEl = null; }
+      const m = document.createElement('div');
+      m.id = 'kb-add-modal';
+      m.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,0.4);';
+      m.innerHTML = `<div style="background:var(--card-bg,#fff);border-radius:12px;padding:24px;width:440px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,0.18);">
+        <div style="font-size:15px;font-weight:700;margin-bottom:16px;">新增知识</div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px;">知识内容 <span style="color:var(--red);">*</span></label>
+          <textarea id="kb-add-content" rows="4" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit;" placeholder="输入知识内容…"></textarea>
+        </div>
+        <div style="display:flex;gap:12px;margin-bottom:16px;">
+          <div style="flex:1;">
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px;">分类</label>
+            <select id="kb-add-cat" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--card-bg,#fff);box-sizing:border-box;">
+              <option value="brand_keyword">品牌词定义</option>
+              <option value="negkw_rule">否定词规则</option>
+              <option value="campaign_rule">Campaign 规则</option>
+              <option value="user_correction" selected>用户纠正/经验</option>
+            </select>
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px;">关联产品（可选）</label>
+            <select id="kb-add-product" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--card-bg,#fff);box-sizing:border-box;">
+              <option value="">不关联</option>
+              <option value="ft">Ft (Fachat)</option>
+              <option value="pu">Pu (Parau)</option>
+              <option value="ppt">Ppt (PinkPinkChat)</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button id="kb-add-cancel" style="padding:8px 20px;border:1px solid var(--border);border-radius:8px;background:none;font-size:13px;cursor:pointer;color:var(--text2);">取消</button>
+          <button id="kb-add-save" style="padding:8px 20px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">保存</button>
+        </div>
+      </div>`;
+      document.body.appendChild(m);
+      modalEl = m;
 
-      if (typeof SBSync !== 'undefined' && SBSync.addKnowledge) {
-        SBSync.addKnowledge(cat, content.trim(), 'manual', [], me, product).then(id => {
+      m.addEventListener('click', e => { if (e.target === m) closeAddModal(); });
+      m.querySelector('#kb-add-cancel').addEventListener('click', closeAddModal);
+      m.querySelector('#kb-add-save').addEventListener('click', async () => {
+        const content = m.querySelector('#kb-add-content').value.trim();
+        if (!content) { alert('请输入知识内容'); m.querySelector('#kb-add-content').focus(); return; }
+        const cat = m.querySelector('#kb-add-cat').value;
+        const product = m.querySelector('#kb-add-product').value || null;
+        const saveBtn = m.querySelector('#kb-add-save');
+        saveBtn.disabled = true; saveBtn.textContent = '保存中…';
+        if (typeof SBSync !== 'undefined' && SBSync.addKnowledge) {
+          const id = await SBSync.addKnowledge(cat, content, 'manual', [], me, product);
           if (id) {
+            closeAddModal();
             activeTab = 'personal';
             document.querySelectorAll('.kb-tab').forEach(t => {
               const isActive = t.dataset.kbTab === 'personal';
@@ -4497,10 +4537,16 @@ function renderNegKWCenter() {
               t.style.color = isActive ? 'var(--accent)' : 'var(--text3)';
             });
             renderCurrentTab();
+          } else {
+            saveBtn.disabled = false; saveBtn.textContent = '保存';
+            alert('保存失败，请重试');
           }
-        });
-      }
-    });
+        }
+      });
+      setTimeout(() => m.querySelector('#kb-add-content').focus(), 50);
+    }
+    function closeAddModal() { if (modalEl) { modalEl.remove(); modalEl = null; } }
+    addBtn.addEventListener('click', openAddModal);
   }
 
   // ── Nav trigger ──

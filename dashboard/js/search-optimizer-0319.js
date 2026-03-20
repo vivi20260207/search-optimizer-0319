@@ -3319,23 +3319,40 @@ function syncSidebarDataLines() {
 
 function setGlobalDateRange(start, end, options = {}) {
   const { updateInputs = true } = options;
-  recomputeBundleEndEffective();
-  let s = start;
-  let e = end;
-  if (s > e) { const t = s; s = e; e = t; }
-  s = clampYmd(s, ADW_META.startDate, ADW_BUNDLE_END_EFFECTIVE);
-  e = clampYmd(e, ADW_META.startDate, ADW_BUNDLE_END_EFFECTIVE);
-  DATE_RANGE = { start: s, end: e };
-  saveDateRange(s, e);
-  if (updateInputs) {
-    const dsi = document.getElementById('date-range-start');
-    const dei = document.getElementById('date-range-end');
-    if (dsi) dsi.value = s;
-    if (dei) dei.value = e;
+  const hint = document.getElementById('date-range-hint');
+  const applyBtn = document.getElementById('date-range-apply');
+  try {
+    recomputeBundleEndEffective();
+    let s = start;
+    let e = end;
+    if (s > e) { const t = s; s = e; e = t; }
+    s = clampYmd(s, ADW_META.startDate, ADW_BUNDLE_END_EFFECTIVE);
+    e = clampYmd(e, ADW_META.startDate, ADW_BUNDLE_END_EFFECTIVE);
+    DATE_RANGE = { start: s, end: e };
+    saveDateRange(s, e);
+    if (updateInputs) {
+      const dsi = document.getElementById('date-range-start');
+      const dei = document.getElementById('date-range-end');
+      if (dsi) dsi.value = s;
+      if (dei) dei.value = e;
+    }
+    rebuildMapsForDateRange(s, e);
+    refreshAllDashboardRenders();
+    syncSidebarDataLines();
+    if (applyBtn) {
+      applyBtn.textContent = '已应用 ✓';
+      applyBtn.style.background = 'var(--green, #22c55e)';
+      setTimeout(() => { applyBtn.textContent = '应用'; applyBtn.style.background = ''; }, 1200);
+    }
+    if (hint) {
+      hint.textContent = `已应用: ${s} ~ ${e}（${SEARCH_CAMPS.length} 个系列, KW ${Object.keys(KW_MAP).length}, ST ${Object.keys(ST_MAP).length}）`;
+    }
+    console.log('[DateRange] Applied:', s, '~', e, 'CAMPS:', SEARCH_CAMPS.length);
+  } catch (err) {
+    console.error('[DateRange] Error:', err);
+    if (hint) hint.textContent = '日期应用出错: ' + err.message;
+    if (applyBtn) { applyBtn.textContent = '出错'; applyBtn.style.background = 'var(--red, #ef4444)'; setTimeout(() => { applyBtn.textContent = '应用'; applyBtn.style.background = ''; }, 3000); }
   }
-  rebuildMapsForDateRange(s, e);
-  refreshAllDashboardRenders();
-  syncSidebarDataLines();
 }
 
 function applyQuickDatePreset(kind) {

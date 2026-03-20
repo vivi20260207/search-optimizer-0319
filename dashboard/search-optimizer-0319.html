@@ -4,9 +4,21 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Search Optimizer 中台 | Google Ads 优化</title>
-  <link rel="stylesheet" href="css/search-optimizer-0319.css?v=20260320kb3">
+  <link rel="stylesheet" href="css/search-optimizer-0319.css?v=20260320auth1">
 </head>
 <body>
+<div id="so-auth-overlay" class="so-auth-overlay" aria-modal="true" role="dialog">
+  <div class="so-auth-box">
+    <h2 class="so-auth-title">Search Optimizer</h2>
+    <p class="so-auth-sub muted">登录后使用优化中台</p>
+    <label class="so-auth-label" for="so-auth-user">用户名</label>
+    <input type="text" id="so-auth-user" class="so-auth-input" autocomplete="username" placeholder="用户名" />
+    <label class="so-auth-label" for="so-auth-pass">密码</label>
+    <input type="password" id="so-auth-pass" class="so-auth-input" autocomplete="current-password" placeholder="密码" />
+    <div id="so-auth-err" class="so-auth-err" role="alert"></div>
+    <button type="button" id="so-auth-btn" class="so-auth-btn">登录</button>
+  </div>
+</div>
 <div class="layout">
 
   <!-- ═══ Sidebar ═══ -->
@@ -97,7 +109,8 @@
       <div id="sidebar-bundle-line">数据包: —</div>
       <div id="sidebar-filter-line" style="margin-top:4px;">分析区间: —</div>
       <div id="sidebar-generated-line" style="margin-top:4px;">—</div>
-      
+      <div id="so-auth-user-line" class="muted" style="font-size:11px;margin-top:10px;">—</div>
+      <button type="button" id="so-auth-logout" class="so-auth-logout-btn">退出登录</button>
     </div>
   </nav>
 
@@ -929,6 +942,36 @@
 <script src="js/engine-0319.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="js/supabase-sync.js?v=20260320kb5"></script>
-<script src="js/search-optimizer-0319.js?v=20260320dateFilter1"></script>
+<script src="js/so-auth.js"></script>
+<script>
+(function () {
+  function wire() {
+    SOAuth.applyGate();
+    if (SOAuth.getUser()) return;
+    function send() {
+      var u = document.getElementById('so-auth-user').value;
+      var p = document.getElementById('so-auth-pass').value;
+      SOAuth.tryLogin(u, p).then(function (ok) {
+        var err = document.getElementById('so-auth-err');
+        if (ok) {
+          err.textContent = '';
+          SOAuth.showApp();
+        } else {
+          err.textContent = '用户名或密码错误';
+        }
+      });
+    }
+    var btn = document.getElementById('so-auth-btn');
+    if (btn) btn.addEventListener('click', send);
+    var pw = document.getElementById('so-auth-pass');
+    if (pw) pw.addEventListener('keydown', function (e) { if (e.key === 'Enter') send(); });
+  }
+  var lo = document.getElementById('so-auth-logout');
+  if (lo) lo.addEventListener('click', function () { SOAuth.logout(); });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
+  else wire();
+})();
+</script>
+<script src="js/search-optimizer-0319.js?v=20260320kb6"></script>
 </body>
 </html>

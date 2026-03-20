@@ -4358,6 +4358,8 @@ function renderNegKWCenter() {
     const countEl = document.getElementById('opt-kb-count');
     if (!listEl) return;
 
+    if (typeof SBSync !== 'undefined' && SBSync.clearKnowledgeCache) SBSync.clearKnowledgeCache();
+
     if (typeof SBSync === 'undefined' || !SBSync.getKnowledge) {
       listEl.innerHTML = '<div class="muted" style="text-align:center;padding:40px;">Supabase 未连接</div>';
       return;

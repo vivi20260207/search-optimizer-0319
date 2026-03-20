@@ -338,6 +338,20 @@ function rebuildSearchCampsFromDaily(start, end) {
   });
 }
 
+let ST_CAMP_MAP = {};
+function rebuildSTCampMap() {
+  ST_CAMP_MAP = {};
+  const allCamps = new Set([...Object.keys(KW_MAP), ...Object.keys(ST_MAP)]);
+  let idx = 0;
+  allCamps.forEach(camp => {
+    if (ST_MAP[camp] || KW_MAP[camp]) {
+      const key = 'camp-' + idx++;
+      const shortName = typeof U !== 'undefined' && U.campShortName ? U.campShortName(camp) : camp;
+      ST_CAMP_MAP[key] = { label: shortName, kw: camp, st: camp };
+    }
+  });
+}
+
 function rebuildMapsForDateRange(start, end) {
   Object.keys(KW_MAP).forEach(k => delete KW_MAP[k]);
   Object.keys(ST_MAP).forEach(k => delete ST_MAP[k]);
@@ -1576,20 +1590,7 @@ function toggleAnomaly(card) {
 // ═══════════════════════════════════════
 // 搜索词 & 关键词分析（增强版）
 // ═══════════════════════════════════════
-// 随 KW/ST 变化重建（日期筛选后需刷新）
-let ST_CAMP_MAP = {};
-function rebuildSTCampMap() {
-  ST_CAMP_MAP = {};
-  const allCamps = new Set([...Object.keys(KW_MAP), ...Object.keys(ST_MAP)]);
-  let idx = 0;
-  allCamps.forEach(camp => {
-    if (ST_MAP[camp] || KW_MAP[camp]) {
-      const key = 'camp-' + idx++;
-      const shortName = typeof U !== 'undefined' && U.campShortName ? U.campShortName(camp) : camp;
-      ST_CAMP_MAP[key] = { label: shortName, kw: camp, st: camp };
-    }
-  });
-}
+// ST_CAMP_MAP / rebuildSTCampMap 定义在 rebuildMapsForDateRange 之上（避免 TDZ）
 
 let _stModuleListenersBound = false;
 function initSearchTermsModule() {

@@ -84,11 +84,9 @@
       <li class="nav-item" data-view="postback-log">
         <span class="nav-icon">📡</span> 回传调整记录
       </li>
-      <li class="nav-item" data-view="ai-knowledge">
+      <li class="nav-item" data-view="knowledge">
         <span class="nav-icon">📚</span> 知识库
-      </li>
-      <li class="nav-item" data-view="optimizer-knowledge">
-        <span class="nav-icon">👤</span> 优化师知识库
+        <span class="nav-badge" id="nav-review-count" style="display:none;">0</span>
       </li>
 
       <li class="nav-group-label">例行检查</li>
@@ -898,37 +896,32 @@
       </div>
     </section>
 
-    <section class="view-section" id="view-ai-knowledge">
+    <section class="view-section" id="view-knowledge">
       <div class="page-header">
         <div>
           <h2>知识库</h2>
-          <span class="page-header-meta">分析用规则与阈值；点击一条在右侧备注或纠正。</span>
+          <span class="page-header-meta">团队沉淀的优化经验与规则，点击条目可在右侧备注或纠正。</span>
         </div>
-        <span class="data-tag" style="background:rgba(139,92,246,.15);color:#8b5cf6;">Supabase 云端</span>
-      </div>
-      <div id="ai-kb-list" style="display:flex;flex-direction:column;gap:12px;"></div>
-    </section>
-
-    <section class="view-section" id="view-optimizer-knowledge">
-      <div class="page-header">
-        <div>
-          <h2>优化师知识库</h2>
-          <span class="page-header-meta">来源：手动输入、根因分析/否定词诊断中的反馈。</span>
-        </div>
-        <span class="data-tag" style="background:rgba(34,197,94,.15);color:#16a34a;">Supabase 云端</span>
-      </div>
-      <div class="card">
-        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-          <h3 style="margin:0;">知识条目</h3>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <span id="opt-kb-count" class="muted" style="font-size:12px;">—</span>
-            <button id="opt-kb-add-btn" style="padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--card-bg);cursor:pointer;font-size:12px;font-weight:600;">+ 新增知识</button>
-          </div>
-        </div>
-        <div class="card-body" style="padding:0;">
-          <div id="opt-kb-list" style="padding:16px;"></div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span class="data-tag" style="background:rgba(139,92,246,.15);color:#8b5cf6;">Supabase 云端</span>
+          <button id="kb-add-btn" style="padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:var(--card-bg,#fff);cursor:pointer;font-size:12px;font-weight:600;">+ 新增知识</button>
         </div>
       </div>
+      <div class="kb-tabs" style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:16px;">
+        <button class="kb-tab active" data-kb-tab="team" style="padding:10px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid var(--accent);margin-bottom:-2px;color:var(--accent);">优化组知识库</button>
+        <button class="kb-tab" data-kb-tab="product" style="padding:10px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--text3);">分产品知识库</button>
+        <button class="kb-tab" data-kb-tab="personal" style="padding:10px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--text3);">我的知识库</button>
+        <button class="kb-tab" data-kb-tab="review" style="padding:10px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--text3);">待评审 <span id="kb-review-badge" style="display:none;background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:10px;margin-left:4px;">0</span></button>
+      </div>
+      <div id="kb-product-filter" style="display:none;margin-bottom:12px;">
+        <select id="kb-product-select" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--card-bg,#fff);color:var(--text);">
+          <option value="all">全部产品</option>
+          <option value="ft">Ft (Fachat)</option>
+          <option value="pu">Pu (Parau)</option>
+          <option value="ppt">Ppt (PinkPinkChat)</option>
+        </select>
+      </div>
+      <div id="kb-list" style="display:flex;flex-direction:column;gap:12px;"></div>
     </section>
 
   </main>
@@ -1108,7 +1101,7 @@
   else wire();
 })();
 </script>
-<script src="js/search-optimizer-0319.js?v=20260320stfix1"></script>
+<script src="js/search-optimizer-0319.js?v=20260320dateUI2"></script>
 <script>
 /* 捕获阶段处理退出：不依赖 SOAuth，避免其它脚本报错导致无法退出 */
 (function () {

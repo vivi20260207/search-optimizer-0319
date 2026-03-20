@@ -318,6 +318,58 @@
       catch (e) { console.warn('[SB] delSetting err', e); }
     },
 
+    // ── Knowledge Base ──
+
+    _kbCache: null,
+    _kbCacheTime: 0,
+
+    async getKnowledge(filterTags) {
+      if (!sb()) return [];
+      var now = Date.now();
+      if (this._kbCache && now - this._kbCacheTime < 300000) {
+        return filterTags ? this._kbCache.filter(function(k) {
+          return k.tags && k.tags.some(function(t) { return filterTags.indexOf(t) >= 0; });
+        }) : this._kbCache;
+      }
+      try {
+        var res = await sb().from('knowledge_base')
+          .select('id, category, content, tags')
+          .is('deleted_at', null)
+          .order('id');
+        if (res.error) throw res.error;
+        this._kbCache = res.data || [];
+        this._kbCacheTime = now;
+        if (filterTags) {
+          return this._kbCache.filter(function(k) {
+            return k.tags && k.tags.some(function(t) { return filterTags.indexOf(t) >= 0; });
+          });
+        }
+        return this._kbCache;
+      } catch (e) { console.warn('[SB] getKB err', e); return []; }
+    },
+
+    async addKnowledge(category, content, source, tags) {
+      if (!sb()) return null;
+      try {
+        var res = await sb().from('knowledge_base')
+          .insert({ category: category, content: content, source: source || 'user', tags: tags || [] })
+          .select('id').single();
+        if (res.error) throw res.error;
+        this._kbCache = null;
+        return res.data ? res.data.id : null;
+      } catch (e) { console.warn('[SB] addKB err', e); return null; }
+    },
+
+    async deleteKnowledge(kbId) {
+      if (!kbId || !sb()) return;
+      try {
+        await sb().from('knowledge_base')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', kbId);
+        this._kbCache = null;
+      } catch (e) { console.warn('[SB] delKB err', e); }
+    },
+
     async saveSnapshot(dataType, snapshotDate, data, recordCount) {
       if (!sb()) return;
       try {

@@ -60,6 +60,9 @@
       <li class="nav-item" data-view="postback-log">
         <span class="nav-icon">📡</span> 回传调整记录
       </li>
+      <li class="nav-item" data-view="knowledge-base">
+        <span class="nav-icon">🧠</span> AI 知识库
+      </li>
 
       <li class="nav-group-label">例行检查</li>
       <li class="nav-item" data-view="landing-page">
@@ -77,8 +80,9 @@
       </li>
     </ul>
     <div class="sidebar-footer">
-      数据周期: 2026-02-01 ~ 2026-03-20<br>
-      更新: 2026-03-20 | 仅 Search 为核心
+      <div id="sidebar-bundle-line">数据包: —</div>
+      <div id="sidebar-filter-line" style="margin-top:4px;">分析区间: —</div>
+      <div id="sidebar-generated-line" style="margin-top:4px;">—</div>
       <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,.15);padding-top:8px;">
         <button id="btn-ai-settings" style="background:none;border:1px solid rgba(255,255,255,.2);color:#94a3b8;font-size:11px;padding:4px 10px;border-radius:6px;cursor:pointer;width:100%;" title="配置 Gemini API Key">⚙️ AI 分析设置</button>
       </div>
@@ -87,6 +91,15 @@
 
   <!-- ═══ Main Content ═══ -->
   <main class="main">
+
+    <div class="global-date-bar" id="global-date-bar" aria-label="分析日期筛选">
+      <span class="global-date-bar-title">分析日期</span>
+      <label class="global-date-bar-field"><span class="sr-only">开始</span><input type="date" id="date-range-start" /></label>
+      <span class="global-date-bar-sep">至</span>
+      <label class="global-date-bar-field"><span class="sr-only">结束</span><input type="date" id="date-range-end" /></label>
+      <button type="button" class="global-date-bar-apply" id="date-range-apply">应用</button>
+      <span class="global-date-bar-hint" id="date-range-hint"></span>
+    </div>
 
     <!-- ═══ VIEW: 数据可信度门控 ═══ -->
     <section class="view-section" id="view-trust-gate">
@@ -738,6 +751,28 @@
       </div>
     </section>
 
+    <section class="view-section" id="view-knowledge-base">
+      <div class="page-header">
+        <div>
+          <h2>AI 知识库</h2>
+          <span class="page-header-meta">存储团队纠正和业务规则，AI 分析时自动注入作为上下文。支持在备注中点击 📌 快速存入。</span>
+        </div>
+        <span class="data-tag" style="background:rgba(139,92,246,.15);color:#8b5cf6;">Supabase 云端</span>
+      </div>
+      <div class="card">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <h3 style="margin:0;">知识条目</h3>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span id="kb-count" class="muted" style="font-size:12px;">—</span>
+            <button id="kb-add-btn" style="padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--card-bg);cursor:pointer;font-size:12px;font-weight:600;">+ 新增知识</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <div id="kb-list" style="padding:16px;"></div>
+        </div>
+      </div>
+    </section>
+
   </main>
 </div>
 
@@ -772,6 +807,7 @@
 <script src="js/adw_data_assets.js"></script>
 <script src="js/adw_data_changelog.js?v=20260320b"></script>
 <script src="js/adw_data_negkw.js?v=20260319b"></script>
+<script src="js/campaign_product_map.js?v=20260320a"></script>
 <script src="js/utils-0319.js"></script>
 <script src="js/engine-0319.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>

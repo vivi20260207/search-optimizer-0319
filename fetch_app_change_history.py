@@ -6,13 +6,16 @@ Outputs to dashboard/js/adw_data_app_changelog.js
 Usage:
     python fetch_app_change_history.py
 """
-import sys, json, time
+import sys, json, time, os
+from datetime import datetime, timedelta
 from google.ads.googleads.client import GoogleAdsClient
 from google.ads.googleads.errors import GoogleAdsException
 
 OUTPUT_PATH = "dashboard/js/adw_data_app_changelog.js"
-START_DATE = "2026-02-19"
-END_DATE   = "2026-03-20"
+
+_today = datetime.now().strftime("%Y-%m-%d")
+START_DATE = os.environ.get("ADW_START_DATE", (datetime.now() - timedelta(days=29)).strftime("%Y-%m-%d"))
+END_DATE   = os.environ.get("ADW_END_DATE", _today)
 
 MCC_CONFIGS = [
     "google-ads-app.yaml",           # MCC 7767893962
@@ -341,10 +344,14 @@ def main():
     js += f"// Generated: {time.strftime('%Y-%m-%d %H:%M')}\n\n"
     js += f"const ADW_APP_CHANGE_HISTORY = {json.dumps(all_changes, ensure_ascii=False, indent=None)};\n"
 
-    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
-        f.write(js)
-
-    print(f"Wrote {len(js):,} chars to {OUTPUT_PATH}")
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from scripts.safe_write import safe_write_js
+        safe_write_js(OUTPUT_PATH, js, "app_changelog", all_changes, len(all_changes))
+    except ImportError:
+        with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+            f.write(js)
+        print(f"Wrote {len(js):,} chars to {OUTPUT_PATH}")
 
 if __name__ == "__main__":
     main()

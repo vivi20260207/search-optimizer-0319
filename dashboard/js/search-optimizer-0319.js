@@ -6,12 +6,22 @@
 // ═══════════════════════════════════════
 // DATA PREPARATION
 // ═══════════════════════════════════════
-const SEARCH_CAMPS = CAMPAIGN_SUMMARY.filter(c => c.type === 'Search');
 const ALL_CAMPS = CAMPAIGN_SUMMARY;
+let SEARCH_CAMPS = CAMPAIGN_SUMMARY.filter(c => c.type === 'Search');
 
 const KW_MAP = {};
 const ST_MAP = {};
 const DEV_MAP = {};
+/** ADW 拉取的按日原始行（仅含 API 日维度数据） */
+const RAW_KW_BY_CAMP = {};
+const RAW_ST_BY_CAMP = {};
+const RAW_DEV_BY_CAMP = {};
+const RAW_GENDER_BY_CAMP = {};
+const RAW_AGE_BY_CAMP = {};
+const GENDER_MAP = {};
+const AGE_MAP = {};
+/** 手工 reg 的静态快照（无 date 字段），仅在「全量日期」或该行无 date 时参与筛选 */
+const INITIAL_MANUAL = { kw: {}, st: {}, dev: {} };
 
 function regKW(campName, arr) { if (arr && arr.length) KW_MAP[campName] = arr; }
 function regST(campName, arr) { if (arr && arr.length) ST_MAP[campName] = arr; }
@@ -62,6 +72,12 @@ regDEV('Ft-web-US-2.5-Display-12.26-homepage', typeof ADW_FT_US_DEVICES !== 'und
 regDEV('Ppt-web-UK-2.5-1.18-homepage', typeof ADW_PPT_UK_DEVICES !== 'undefined' ? ADW_PPT_UK_DEVICES : []);
 regDEV('Ppt-web-US-2.5-1.17-homepage', typeof ADW_PPT_US_DEVICES !== 'undefined' ? ADW_PPT_US_DEVICES : []);
 
+(function snapshotManualMaps() {
+  Object.keys(KW_MAP).forEach(k => { INITIAL_MANUAL.kw[k] = (KW_MAP[k] || []).map(r => ({ ...r })); });
+  Object.keys(ST_MAP).forEach(k => { INITIAL_MANUAL.st[k] = (ST_MAP[k] || []).map(r => ({ ...r })); });
+  Object.keys(DEV_MAP).forEach(k => { INITIAL_MANUAL.dev[k] = (DEV_MAP[k] || []).map(r => ({ ...r })); });
+})();
+
 normalizeMapData(KW_MAP);
 normalizeMapData(ST_MAP);
 normalizeMapData(DEV_MAP);
@@ -97,114 +113,323 @@ regAsset('Ppt-web-US-2.5-Pmax-1.20-homepage', typeof ADW_PPT_US_PMAX_ASSETS !== 
   });
 })();
 
+// ─── 数据包日期元信息 + 全局筛选区间 ───
+const ADW_META = (typeof ADW_DATA_META !== 'undefined') ? ADW_DATA_META : { startDate: '2026-02-01', endDate: '2099-12-31', generatedAt: '' };
+
+function ymdLocal(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function addDaysYmd(ymd, delta) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + delta);
+  return ymdLocal(dt);
+}
+function clampYmd(ymd, minY, maxY) {
+  if (ymd < minY) return minY;
+  if (ymd > maxY) return maxY;
+  return ymd;
+}
+function isFullDataRange(start, end) {
+  return start <= ADW_META.startDate && end >= ADW_META.endDate;
+}
+function rowInDateRange(row, start, end) {
+  if (!row || !row.date) return isFullDataRange(start, end);
+  return row.date >= start && row.date <= end;
+}
+
+function computeDefaultDateRange() {
+  const ds = ADW_META.startDate;
+  const de = ADW_META.endDate;
+  const today = ymdLocal(new Date());
+  const yest = addDaysYmd(today, -1);
+  let pick = yest;
+  if (pick < ds || pick > de) pick = today;
+  if (pick < ds || pick > de) pick = de;
+  return { start: pick, end: pick };
+}
+
+const DATE_RANGE_KEY = 'adw_date_range_v1';
+function loadSavedDateRange() {
+  try {
+    const j = JSON.parse(localStorage.getItem(DATE_RANGE_KEY) || 'null');
+    if (j && j.start && j.end) return { start: j.start, end: j.end };
+  } catch (_) {}
+  return null;
+}
+function saveDateRange(s, e) {
+  localStorage.setItem(DATE_RANGE_KEY, JSON.stringify({ start: s, end: e }));
+}
+
+let DATE_RANGE = loadSavedDateRange() || computeDefaultDateRange();
+DATE_RANGE.start = clampYmd(DATE_RANGE.start, ADW_META.startDate, ADW_META.endDate);
+DATE_RANGE.end = clampYmd(DATE_RANGE.end, ADW_META.startDate, ADW_META.endDate);
+if (DATE_RANGE.start > DATE_RANGE.end) {
+  const t = DATE_RANGE.start; DATE_RANGE.start = DATE_RANGE.end; DATE_RANGE.end = t;
+}
+
+function aggregateKwRows(rows) {
+  const agg = {};
+  rows.forEach(r => {
+    const key = r.adGroup + '|||' + r.keyword + '|||' + r.matchType;
+    if (!agg[key]) {
+      agg[key] = {
+        campaign: r.campaign, adGroup: r.adGroup, keyword: r.keyword,
+        matchType: r.matchType, status: '有效',
+        clicks: 0, impressions: 0, cost: 0,
+        purchaseNew: 0, purchaseNewValue: 0,
+        cpc: 0, cpa: 0, impressionShare: '< 10%',
+        qualityScore: '', expectedCTR: '', landingPageExp: '', adRelevance: '',
+        _latestQS: null
+      };
+    }
+    const a = agg[key];
+    a.clicks += r.clicks || 0;
+    a.impressions += r.impressions || 0;
+    a.cost += r.cost || 0;
+    a.purchaseNew += r.conversions || 0;
+    a.purchaseNewValue += r.revenue || 0;
+    if (r.qualityScore && r.qualityScore > 0) a._latestQS = r.qualityScore;
+    if (r.expectedCTR) a.expectedCTR = r.expectedCTR;
+    if (r.landingPageExp) a.landingPageExp = r.landingPageExp;
+  });
+  return Object.values(agg).map(a => {
+    a.cpc = a.clicks > 0 ? +(a.cost / a.clicks).toFixed(2) : 0;
+    a.cpa = a.purchaseNew > 0 ? +(a.cost / a.purchaseNew).toFixed(2) : 0;
+    a.qualityScore = a._latestQS || '';
+    delete a._latestQS;
+    return a;
+  });
+}
+
+function aggregateStRows(rows) {
+  const agg = {};
+  rows.forEach(r => {
+    const key = (r.adGroup || '') + '|||' + (r.term || '');
+    if (!agg[key]) {
+      agg[key] = {
+        campaign: r.campaign, adGroup: r.adGroup, term: r.term,
+        addedExcluded: r.addedExcluded || '',
+        clicks: 0, impressions: 0, cost: 0,
+        purchaseNew: 0, purchaseNewValue: 0, matchType: r.matchType || ''
+      };
+    }
+    const a = agg[key];
+    a.clicks += r.clicks || 0;
+    a.impressions += r.impressions || 0;
+    a.cost += r.cost || 0;
+    a.purchaseNew += r.conversions || r.purchaseNew || 0;
+    a.purchaseNewValue += r.revenue || r.purchaseNewValue || 0;
+  });
+  return Object.values(agg).map(a => {
+    a.cpc = a.clicks > 0 ? +(a.cost / a.clicks).toFixed(2) : 0;
+    return a;
+  });
+}
+
+function aggregateDevRows(rows) {
+  const agg = {};
+  rows.forEach(r => {
+    const d = r.device;
+    if (!agg[d]) agg[d] = { device: d, impressions: 0, clicks: 0, cost: 0, conversions: 0 };
+    agg[d].impressions += r.impressions || 0;
+    agg[d].clicks += r.clicks || 0;
+    agg[d].cost += r.cost || 0;
+    agg[d].conversions += r.conversions || 0;
+  });
+  return Object.values(agg).map(a => {
+    a.cpc = a.clicks > 0 ? +(a.cost / a.clicks).toFixed(2) : 0;
+    a.ctr = a.impressions > 0 ? (a.clicks / a.impressions * 100).toFixed(2) + '%' : '0%';
+    a.cpa = a.conversions > 0 ? +(a.cost / a.conversions).toFixed(2) : 0;
+    a.convRate = a.clicks > 0 ? (a.conversions / a.clicks * 100).toFixed(2) + '%' : '0%';
+    return a;
+  });
+}
+
+function aggregateGenderRows(rows) {
+  const agg = {};
+  rows.forEach(r => {
+    const k = r.gender;
+    if (!agg[k]) {
+      agg[k] = { campaign: r.campaign, gender: r.gender, impressions: 0, clicks: 0, cost: 0, conversions: 0, revenue: 0 };
+    }
+    agg[k].impressions += r.impressions || 0;
+    agg[k].clicks += r.clicks || 0;
+    agg[k].cost += r.cost || 0;
+    agg[k].conversions += r.conversions || 0;
+    agg[k].revenue += r.revenue || 0;
+  });
+  return Object.values(agg);
+}
+
+function aggregateAgeRows(rows) {
+  const agg = {};
+  rows.forEach(r => {
+    const k = r.ageRange;
+    if (!agg[k]) {
+      agg[k] = { campaign: r.campaign, ageRange: r.ageRange, impressions: 0, clicks: 0, cost: 0, conversions: 0, revenue: 0 };
+    }
+    agg[k].impressions += r.impressions || 0;
+    agg[k].clicks += r.clicks || 0;
+    agg[k].cost += r.cost || 0;
+    agg[k].conversions += r.conversions || 0;
+    agg[k].revenue += r.revenue || 0;
+  });
+  return Object.values(agg);
+}
+
+function rebuildSearchCampsFromDaily(start, end) {
+  SEARCH_CAMPS = CAMPAIGN_SUMMARY.filter(c => c.type === 'Search').map(base => {
+    const daily = (CAMP_DAILY_MAP[base.name] || []).filter(r => rowInDateRange(r, start, end));
+    const spend = daily.reduce((s, r) => s + (r.cost || 0), 0);
+    const totalRevenue = daily.reduce((s, r) => s + (r.revenue || 0), 0);
+    const newPayUsers = Math.round(daily.reduce((s, r) => s + (r.conversions || 0), 0));
+    const roas = spend > 0 ? totalRevenue / spend : 0;
+    const newCPA = newPayUsers > 0 ? spend / newPayUsers : 0;
+    const ratio = base.spend > 0 ? spend / base.spend : (spend > 0 ? 1 : 0);
+    return {
+      ...base,
+      spend,
+      totalRevenue,
+      newPayUsers,
+      roas,
+      newCPA,
+      newIOS: Math.max(0, Math.round((base.newIOS || 0) * ratio)),
+      newAndroid: Math.max(0, Math.round((base.newAndroid || 0) * ratio))
+    };
+  });
+}
+
+function rebuildMapsForDateRange(start, end) {
+  Object.keys(KW_MAP).forEach(k => delete KW_MAP[k]);
+  Object.keys(ST_MAP).forEach(k => delete ST_MAP[k]);
+  Object.keys(DEV_MAP).forEach(k => delete DEV_MAP[k]);
+
+  Object.entries(RAW_KW_BY_CAMP).forEach(([camp, rows]) => {
+    const f = rows.filter(r => rowInDateRange(r, start, end));
+    const arr = aggregateKwRows(f);
+    if (arr.length) regKW(camp, arr);
+  });
+  Object.entries(RAW_ST_BY_CAMP).forEach(([camp, rows]) => {
+    const f = rows.filter(r => rowInDateRange(r, start, end));
+    const arr = aggregateStRows(f);
+    if (arr.length) regST(camp, arr);
+  });
+  Object.entries(RAW_DEV_BY_CAMP).forEach(([camp, rows]) => {
+    const f = rows.filter(r => rowInDateRange(r, start, end));
+    const arr = aggregateDevRows(f);
+    if (arr.length) regDEV(camp, arr);
+  });
+
+  Object.entries(INITIAL_MANUAL.kw).forEach(([camp, rows]) => {
+    if (RAW_KW_BY_CAMP[camp]) return;
+    const f = rows.filter(r => rowInDateRange(r, start, end));
+    if (f.length) regKW(camp, f);
+  });
+  Object.entries(INITIAL_MANUAL.st).forEach(([camp, rows]) => {
+    if (RAW_ST_BY_CAMP[camp]) return;
+    const f = rows.filter(r => rowInDateRange(r, start, end));
+    if (f.length) regST(camp, f);
+  });
+  Object.entries(INITIAL_MANUAL.dev).forEach(([camp, rows]) => {
+    if (RAW_DEV_BY_CAMP[camp]) return;
+    const f = rows.filter(r => rowInDateRange(r, start, end));
+    if (f.length) regDEV(camp, f);
+  });
+
+  normalizeMapData(KW_MAP);
+  normalizeMapData(ST_MAP);
+  normalizeMapData(DEV_MAP);
+
+  Object.keys(GENDER_MAP).forEach(k => delete GENDER_MAP[k]);
+  Object.keys(AGE_MAP).forEach(k => delete AGE_MAP[k]);
+  Object.entries(RAW_GENDER_BY_CAMP).forEach(([camp, rows]) => {
+    const f = rows.filter(r => rowInDateRange(r, start, end));
+    const arr = aggregateGenderRows(f);
+    if (arr.length) GENDER_MAP[camp] = arr;
+  });
+  Object.entries(RAW_AGE_BY_CAMP).forEach(([camp, rows]) => {
+    const f = rows.filter(r => rowInDateRange(r, start, end));
+    const arr = aggregateAgeRows(f);
+    if (arr.length) AGE_MAP[camp] = arr;
+  });
+
+  rebuildSearchCampsFromDaily(start, end);
+  rebuildFlatArrays();
+  rebuildSTCampMap();
+}
+
+let FLAT_KW = [];
+let FLAT_ST = [];
+function rebuildFlatArrays() {
+  FLAT_KW = [];
+  Object.entries(KW_MAP).forEach(([camp, kws]) => {
+    kws.forEach(kw => FLAT_KW.push({ ...kw, _camp: camp }));
+  });
+  FLAT_ST = [];
+  Object.entries(ST_MAP).forEach(([camp, sts]) => {
+    sts.forEach(st => FLAT_ST.push({ ...st, _camp: camp }));
+  });
+}
+
 // ─── Auto-register ALL campaigns from adw_data_daily.js ───
 const CAMP_DAILY_MAP = {};
 
 (function autoRegisterDaily() {
   const globals = Object.keys(window);
 
-  // Campaign Daily → CAMP_DAILY_MAP (raw daily rows, for trend charts)
   globals.filter(k => k.startsWith('ADW_CAMP_') && Array.isArray(window[k]) && window[k].length > 0)
     .forEach(k => {
       const camp = window[k][0].campaign;
       if (camp) CAMP_DAILY_MAP[camp] = window[k];
     });
 
-  // Keywords Daily → aggregate by campaign+adGroup+keyword, register into KW_MAP
   globals.filter(k => k.startsWith('ADW_KW_') && Array.isArray(window[k]) && window[k].length > 0)
     .forEach(k => {
       const camp = window[k][0].campaign;
-      if (!camp || KW_MAP[camp]) return;
-      const agg = {};
-      window[k].forEach(r => {
-        const key = r.adGroup + '|||' + r.keyword + '|||' + r.matchType;
-        if (!agg[key]) {
-          agg[key] = {
-            campaign: r.campaign, adGroup: r.adGroup, keyword: r.keyword,
-            matchType: r.matchType, status: '有效',
-            clicks: 0, impressions: 0, cost: 0,
-            purchaseNew: 0, purchaseNewValue: 0,
-            cpc: 0, cpa: 0, impressionShare: '< 10%',
-            qualityScore: '', expectedCTR: '', landingPageExp: '', adRelevance: '',
-            _latestQS: null
-          };
-        }
-        const a = agg[key];
-        a.clicks += r.clicks || 0;
-        a.impressions += r.impressions || 0;
-        a.cost += r.cost || 0;
-        a.purchaseNew += r.conversions || 0;
-        a.purchaseNewValue += r.revenue || 0;
-        if (r.qualityScore && r.qualityScore > 0) a._latestQS = r.qualityScore;
-        if (r.expectedCTR) a.expectedCTR = r.expectedCTR;
-        if (r.landingPageExp) a.landingPageExp = r.landingPageExp;
-      });
-      const arr = Object.values(agg).map(a => {
-        a.cpc = a.clicks > 0 ? +(a.cost / a.clicks).toFixed(2) : 0;
-        a.cpa = a.purchaseNew > 0 ? +(a.cost / a.purchaseNew).toFixed(2) : 0;
-        a.qualityScore = a._latestQS || '';
-        delete a._latestQS;
-        return a;
-      });
-      regKW(camp, arr);
+      if (!camp) return;
+      RAW_KW_BY_CAMP[camp] = window[k].map(r => ({ ...r }));
     });
 
-  // Search Terms (aggregated) → register into ST_MAP
   globals.filter(k => k.startsWith('ADW_ST_') && Array.isArray(window[k]) && window[k].length > 0)
     .forEach(k => {
       const camp = window[k][0].campaign;
-      if (!camp || ST_MAP[camp]) return;
-      const arr = window[k].map(r => ({
-        campaign: r.campaign, adGroup: r.adGroup, term: r.term,
-        addedExcluded: r.addedExcluded || '',
-        clicks: r.clicks || 0, impressions: r.impressions || 0,
-        cost: r.cost || 0, cpc: r.cpc || 0,
-        purchaseNew: r.conversions || r.purchaseNew || 0,
-        purchaseNewValue: r.revenue || r.purchaseNewValue || 0,
-        matchType: r.matchType || ''
-      }));
-      regST(camp, arr);
+      if (!camp) return;
+      RAW_ST_BY_CAMP[camp] = window[k].map(r => ({ ...r }));
     });
 
-  // Devices Daily → aggregate by campaign+device, register into DEV_MAP
   globals.filter(k => k.startsWith('ADW_DEV_') && Array.isArray(window[k]) && window[k].length > 0)
     .forEach(k => {
       const camp = window[k][0].campaign;
-      if (!camp || DEV_MAP[camp]) return;
-      const agg = {};
-      window[k].forEach(r => {
-        const d = r.device;
-        if (!agg[d]) agg[d] = { device: d, impressions: 0, clicks: 0, cost: 0, conversions: 0 };
-        agg[d].impressions += r.impressions || 0;
-        agg[d].clicks += r.clicks || 0;
-        agg[d].cost += r.cost || 0;
-        agg[d].conversions += r.conversions || 0;
-      });
-      const arr = Object.values(agg).map(a => {
-        a.cpc = a.clicks > 0 ? +(a.cost / a.clicks).toFixed(2) : 0;
-        a.ctr = a.impressions > 0 ? (a.clicks / a.impressions * 100).toFixed(2) + '%' : '0%';
-        a.cpa = a.conversions > 0 ? +(a.cost / a.conversions).toFixed(2) : 0;
-        a.convRate = a.clicks > 0 ? (a.conversions / a.clicks * 100).toFixed(2) + '%' : '0%';
-        return a;
-      });
-      regDEV(camp, arr);
+      if (!camp) return;
+      RAW_DEV_BY_CAMP[camp] = window[k].map(r => ({ ...r }));
     });
+
+  if (typeof ADW_GENDER_REGISTRY !== 'undefined' && Array.isArray(ADW_GENDER_REGISTRY)) {
+    ADW_GENDER_REGISTRY.forEach(arr => {
+      if (!Array.isArray(arr) || !arr[0] || !arr[0].campaign) return;
+      const camp = arr[0].campaign;
+      RAW_GENDER_BY_CAMP[camp] = arr.map(r => ({ ...r }));
+    });
+  }
+  if (typeof ADW_AGE_REGISTRY !== 'undefined' && Array.isArray(ADW_AGE_REGISTRY)) {
+    ADW_AGE_REGISTRY.forEach(arr => {
+      if (!Array.isArray(arr) || !arr[0] || !arr[0].campaign) return;
+      const camp = arr[0].campaign;
+      RAW_AGE_BY_CAMP[camp] = arr.map(r => ({ ...r }));
+    });
+  }
+
+  rebuildMapsForDateRange(DATE_RANGE.start, DATE_RANGE.end);
 
   console.log('[AutoReg] CAMP_DAILY:', Object.keys(CAMP_DAILY_MAP).length,
     'KW:', Object.keys(KW_MAP).length,
     'ST:', Object.keys(ST_MAP).length,
-    'DEV:', Object.keys(DEV_MAP).length);
+    'DEV:', Object.keys(DEV_MAP).length,
+    'DATE:', DATE_RANGE.start, '~', DATE_RANGE.end);
 })();
-
-const FLAT_KW = [];
-Object.entries(KW_MAP).forEach(([camp, kws]) => {
-  kws.forEach(kw => FLAT_KW.push({ ...kw, _camp: camp }));
-});
-
-const FLAT_ST = [];
-Object.entries(ST_MAP).forEach(([camp, sts]) => {
-  sts.forEach(st => FLAT_ST.push({ ...st, _camp: camp }));
-});
 
 // ═══════════════════════════════════════
 // NAVIGATION
@@ -794,8 +1019,17 @@ async function callGeminiForRCA(userQuestion, rcaContext, aid, renderFn) {
   }
   const model = localStorage.getItem('gemini_model') || 'gemini-2.5-flash';
 
+  let kbSection = '';
+  if (typeof SBSync !== 'undefined' && SBSync.getKnowledge) {
+    try {
+      const kb = await SBSync.getKnowledge();
+      if (kb.length) kbSection = '\n\n## 团队知识库（必须遵守）\n' + kb.map(k => '- ' + k.content).join('\n');
+    } catch(e) {}
+  }
+
   const systemPrompt = `你是投放团队的优化师同事，直接说结论和操作建议，不要废话不要情绪价值。
 你的分析必须基于提供的数据（花费、CPA、ROAS、转化、搜索词等），给出量化判断。
+关键规则：不同产品的 Campaign 中，同一个词的角色不同（品牌词 vs 竞品词），分析前必须先判断 Campaign 属于哪个产品。
 回答格式：
 1. 结论（一句话）
 2. 数据依据（列关键数字）
@@ -811,7 +1045,7 @@ async function callGeminiForRCA(userQuestion, rcaContext, aid, renderFn) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: `${systemPrompt}\n\n---\n\n${rcaContext}\n\n---\n\n优化师问: ${userQuestion}` }] }],
+        contents: [{ parts: [{ text: `${systemPrompt}${kbSection}\n\n---\n\n${rcaContext}\n\n---\n\n优化师问: ${userQuestion}` }] }],
         generationConfig: { temperature: 0.2, maxOutputTokens: 1024 }
       })
     });
@@ -983,9 +1217,11 @@ function openRCADrawer(anomaly, anomalyId, rcaSteps) {
       notes.forEach((n, i) => {
         const time = new Date(n.ts).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
         const isAI = n.role === 'system' && n.text.startsWith('🤖');
+        const saveKbBtn = n.role === 'user' ? `<button class="note-save-kb-btn rca-kb-btn" data-idx="${i}" title="存入知识库，AI 下次分析会记住">📌</button>` : '';
         html += `<div class="note-bubble note-${n.role}" ${isAI ? 'style="background:#f0f4ff;border:1px solid #bfdbfe;"' : ''}>
           <div>${n.text.replace(/\n/g, '<br>')}</div>
           <div class="note-time">${n.role === 'user' ? '我' : isAI ? 'AI' : '系统'} · ${time}
+            ${saveKbBtn}
             <button class="note-delete-btn rca-drawer-del" data-idx="${i}" title="删除">✕</button>
           </div>
         </div>`;
@@ -1022,6 +1258,27 @@ function openRCADrawer(anomaly, anomalyId, rcaSteps) {
 
     U.el('rca-drawer-input').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); U.el('rca-drawer-send').click(); }
+    });
+
+    document.querySelectorAll('.rca-kb-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.idx);
+        const note = notes[idx];
+        if (!note) return;
+        if (typeof SBSync !== 'undefined' && SBSync.addKnowledge) {
+          SBSync.addKnowledge('user_correction', note.text, 'user_correction', ['rca', 'correction']).then(id => {
+            if (id) {
+              btn.textContent = '✅';
+              btn.title = '已存入知识库';
+              btn.disabled = true;
+              addRCANote(anomalyId, '📌 已将上述纠正存入知识库，AI 下次分析会自动参考。', 'system');
+              renderContent();
+              updateRCANoteIndicator(anomalyId);
+            }
+          });
+        }
+      });
     });
 
     document.querySelectorAll('.rca-drawer-del').forEach(btn => {
@@ -1088,9 +1345,10 @@ function toggleAnomaly(card) {
 // ═══════════════════════════════════════
 // 搜索词 & 关键词分析（增强版）
 // ═══════════════════════════════════════
-// Auto-build ST_CAMP_MAP from all campaigns that have both KW and ST data
-const ST_CAMP_MAP = {};
-(function buildSTCampMap() {
+// 随 KW/ST 变化重建（日期筛选后需刷新）
+let ST_CAMP_MAP = {};
+function rebuildSTCampMap() {
+  ST_CAMP_MAP = {};
   const allCamps = new Set([...Object.keys(KW_MAP), ...Object.keys(ST_MAP)]);
   let idx = 0;
   allCamps.forEach(camp => {
@@ -1100,12 +1358,24 @@ const ST_CAMP_MAP = {};
       ST_CAMP_MAP[key] = { label: shortName, kw: camp, st: camp };
     }
   });
-})();
+}
 
+let _stModuleListenersBound = false;
 function initSearchTermsModule() {
   const sel = U.el('st-campaign-select');
+  if (!sel) return;
   sel.innerHTML = Object.entries(ST_CAMP_MAP).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
-  sel.addEventListener('change', renderSearchTermsEnhanced);
+  if (!_stModuleListenersBound) {
+    _stModuleListenersBound = true;
+    sel.addEventListener('change', renderSearchTermsEnhanced);
+  }
+  renderSearchTermsEnhanced();
+}
+
+function refreshSearchTermsSelectOnly() {
+  const sel = U.el('st-campaign-select');
+  if (!sel) return;
+  sel.innerHTML = Object.entries(ST_CAMP_MAP).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
   renderSearchTermsEnhanced();
 }
 
@@ -1812,13 +2082,12 @@ function extractNgrams(text, minN, maxN) {
 const STOP_WORDS = new Set(['to','the','a','an','in','on','for','of','and','or','is','it','my','with','by','at','from','as','how','app','free','online','best','top','new','download']);
 
 function parseCampMeta(campName) {
-  const lower = campName.toLowerCase();
-  let product = '未知';
-  if (lower.startsWith('pu-') || lower.startsWith('pu ')) product = 'PU';
-  else if (lower.startsWith('ppt-') || lower.startsWith('ppt ')) product = 'PPT';
-  else if (lower.startsWith('ft-') || lower.startsWith('ft ')) product = 'FT';
-  const geoMatch = campName.match(/[-\s](IN|US|UK|AR|UAE|IL|QA|BR|MX|PH|ID|TH|VN|MY|SG|TW|HK|JP|KR|DE|FR|ES|IT|AU|CA|RU|SA)[-\s]/i);
-  const geo = geoMatch ? geoMatch[1].toUpperCase() : '未知';
+  const product = (typeof getCampaignProduct === 'function') ? getCampaignProduct(campName) : '未知';
+  const geoMatch = (campName || '').match(/[-\s](IN|US|UK|AR|UAE|IL|QA|BR|MX|PH|ID|TH|VN|MY|SG|TW|HK|JP|KR|DE|FR|ES|IT|AU|CA|RU|SA|印度|美国|巴西)[-\s]?/i);
+  let geo = geoMatch ? geoMatch[1].toUpperCase() : '未知';
+  if (geo === '印度') geo = 'IN';
+  if (geo === '美国') geo = 'US';
+  if (geo === '巴西') geo = 'BR';
   return { product, geo };
 }
 
@@ -1926,6 +2195,7 @@ function findSameThemeKeywords(corePhrase, keywords) {
 }
 
 let ALL_CLUSTERS = [];
+let _clusterViewListenersBound = false;
 
 function renderClusterView() {
   ALL_CLUSTERS = buildKeywordClusters(FLAT_KW, 2);
@@ -1936,8 +2206,11 @@ function renderClusterView() {
 
   renderClusterList();
 
-  campFilter.addEventListener('change', renderClusterList);
-  U.el('cluster-search').addEventListener('input', renderClusterList);
+  if (!_clusterViewListenersBound) {
+    _clusterViewListenersBound = true;
+    campFilter.addEventListener('change', renderClusterList);
+    U.el('cluster-search').addEventListener('input', renderClusterList);
+  }
 }
 
 function renderClusterList() {
@@ -2198,32 +2471,8 @@ function renderLandingPageZone() {
 }
 
 // ═══════════════════════════════════════
-// 受众画像分析 (Gender + Age)
+// 受众画像分析 (Gender + Age) — 数据由 rebuildMapsForDateRange 写入 GENDER_MAP / AGE_MAP
 // ═══════════════════════════════════════
-const GENDER_MAP = {};
-const AGE_MAP = {};
-
-(function autoRegisterDemographics() {
-  if (typeof ADW_GENDER_REGISTRY !== 'undefined' && Array.isArray(ADW_GENDER_REGISTRY)) {
-    ADW_GENDER_REGISTRY.forEach(arr => {
-      if (Array.isArray(arr) && arr.length > 0 && arr[0].campaign) {
-        const camp = arr[0].campaign;
-        if (!GENDER_MAP[camp]) GENDER_MAP[camp] = arr;
-      }
-    });
-  }
-
-  if (typeof ADW_AGE_REGISTRY !== 'undefined' && Array.isArray(ADW_AGE_REGISTRY)) {
-    ADW_AGE_REGISTRY.forEach(arr => {
-      if (Array.isArray(arr) && arr.length > 0 && arr[0].campaign) {
-        const camp = arr[0].campaign;
-        if (!AGE_MAP[camp]) AGE_MAP[camp] = arr;
-      }
-    });
-  }
-
-  console.log('[AutoReg] GENDER:', Object.keys(GENDER_MAP).length, 'AGE:', Object.keys(AGE_MAP).length);
-})();
 
 function renderGender() {
   const allGender = [];
@@ -2831,21 +3080,78 @@ function renderChangesSummary(changes, label) {
 // ═══════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════
-renderTrustGate();
-renderCampaignOverview();
-renderDrillDown();
-renderRootCause();
+function refreshAllDashboardRenders() {
+  renderTrustGate();
+  renderCampaignOverview();
+  renderDrillDown();
+  renderRootCause();
+  refreshSearchTermsSelectOnly();
+  renderAdCopy();
+  renderClusterView();
+  renderQualityScore();
+  renderDevices();
+  renderLandingPageZone();
+  renderGender();
+  renderAge();
+  renderAdPolicy();
+  renderChangeLog();
+  renderNegKWCenter();
+}
+
+function syncSidebarDataLines() {
+  const bundle = document.getElementById('sidebar-bundle-line');
+  const filt = document.getElementById('sidebar-filter-line');
+  const gen = document.getElementById('sidebar-generated-line');
+  if (bundle) {
+    bundle.textContent = `数据包: ${ADW_META.startDate} ~ ${ADW_META.endDate}（最早自 02-01，右端为本次拉取截止日）`;
+  }
+  if (filt) {
+    filt.textContent = DATE_RANGE.start === DATE_RANGE.end
+      ? `分析区间: 单日 ${DATE_RANGE.start}`
+      : `分析区间: ${DATE_RANGE.start} ~ ${DATE_RANGE.end}`;
+  }
+  if (gen) {
+    const g = ADW_META.generatedAt ? `生成: ${ADW_META.generatedAt}` : '';
+    gen.textContent = [g, '仅 Search 为核心'].filter(Boolean).join(' | ');
+  }
+}
+
+let _globalDateBarBound = false;
+function initGlobalDateRangeBar() {
+  const ds = document.getElementById('date-range-start');
+  const de = document.getElementById('date-range-end');
+  const btn = document.getElementById('date-range-apply');
+  if (!ds || !de || !btn) return;
+  ds.min = de.min = ADW_META.startDate;
+  ds.max = de.max = ADW_META.endDate;
+  ds.value = DATE_RANGE.start;
+  de.value = DATE_RANGE.end;
+  const hint = document.getElementById('date-range-hint');
+  if (hint) {
+    hint.textContent = `仅在已加载数据内筛选，不请求接口。无日期的静态表仅在选择「全包」区间时计入（${ADW_META.startDate} ~ ${ADW_META.endDate}）。`;
+  }
+  syncSidebarDataLines();
+  if (_globalDateBarBound) return;
+  _globalDateBarBound = true;
+  btn.addEventListener('click', () => {
+    let s = ds.value;
+    let e = de.value;
+    if (!s || !e) return;
+    if (s > e) { const t = s; s = e; e = t; }
+    s = clampYmd(s, ADW_META.startDate, ADW_META.endDate);
+    e = clampYmd(e, ADW_META.startDate, ADW_META.endDate);
+    DATE_RANGE = { start: s, end: e };
+    saveDateRange(s, e);
+    rebuildMapsForDateRange(s, e);
+    refreshAllDashboardRenders();
+    syncSidebarDataLines();
+  });
+}
+
 initSearchTermsModule();
 initAdCopyModule();
-renderClusterView();
-renderQualityScore();
-renderDevices();
-renderLandingPageZone();
-renderGender();
-renderAge();
-renderAdPolicy();
-renderChangeLog();
-renderNegKWCenter();
+refreshAllDashboardRenders();
+initGlobalDateRangeBar();
 
 // ═══════════════════════════════════════
 // NEGATIVE KEYWORD DIAGNOSTIC CENTER
@@ -3125,15 +3431,24 @@ function renderNegKWCenter() {
     }
     const model = localStorage.getItem('gemini_model') || 'gemini-2.5-flash';
 
+    let kbSection = '';
+    if (typeof SBSync !== 'undefined' && SBSync.getKnowledge) {
+      try {
+        const kb = await SBSync.getKnowledge();
+        if (kb.length) kbSection = '\n\n## 团队知识库（必须遵守）\n' + kb.map(k => '- ' + k.content).join('\n');
+      } catch(e) {}
+    }
+
     const systemPrompt = `你是投放团队的优化师同事，直接说结论和操作建议，不要废话不要情绪价值。
 你正在看否定关键词诊断数据，基于提供的数据（花费、转化、ROAS、搜索词等）做量化判断。
+关键规则：不同产品的 Campaign 中，同一个词的角色不同（品牌词 vs 竞品词），分析前必须先判断 Campaign 属于哪个产品。
 回答格式：
 1. 结论（一句话）
 2. 数据依据（列关键数字）
 3. 操作建议（具体到改什么、改多少）
 如果数据不够判断就直接说缺什么数据，不要瞎猜。用中文。`;
 
-    const prompt = `${systemPrompt}\n\n---\n\n${diagContext}\n\n---\n\n用户问题: ${userQuestion}`;
+    const prompt = `${systemPrompt}${kbSection}\n\n---\n\n${diagContext}\n\n---\n\n用户问题: ${userQuestion}`;
 
     addNote(diagId, '🤖 AI 分析中...', 'system');
     renderFn();
@@ -3213,9 +3528,11 @@ function renderNegKWCenter() {
       notes.forEach((n, i) => {
         const time = new Date(n.ts).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
         const isAI = n.role === 'system' && n.text.startsWith('🤖');
+        const saveKbBtn = n.role === 'user' ? `<button class="note-save-kb-btn" data-idx="${i}" title="存入知识库，AI 下次分析会记住">📌</button>` : '';
         html += `<div class="note-bubble note-${n.role}" ${isAI ? 'style="background:#f0f4ff;border:1px solid #bfdbfe;"' : ''}>
           <div>${n.text.replace(/\n/g, '<br>')}</div>
           <div class="note-time">${n.role === 'user' ? '我' : isAI ? 'AI' : '系统'} · ${time}
+            ${saveKbBtn}
             <button class="note-delete-btn" data-idx="${i}" title="删除">✕</button>
           </div>
         </div>`;
@@ -3249,6 +3566,26 @@ function renderNegKWCenter() {
 
       U.el('diag-note-input').addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); U.el('diag-note-send').click(); }
+      });
+
+      document.querySelectorAll('.note-save-kb-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const idx = parseInt(btn.dataset.idx);
+          const note = notes[idx];
+          if (!note) return;
+          if (typeof SBSync !== 'undefined' && SBSync.addKnowledge) {
+            SBSync.addKnowledge('user_correction', note.text, 'user_correction', ['negkw', 'correction']).then(id => {
+              if (id) {
+                btn.textContent = '✅';
+                btn.title = '已存入知识库';
+                btn.disabled = true;
+                addNote(diagId, '📌 已将上述纠正存入知识库，AI 下次分析会自动参考。', 'system');
+                renderDrawerContent();
+              }
+            });
+          }
+        });
       });
 
       document.querySelectorAll('.note-delete-btn').forEach(btn => {

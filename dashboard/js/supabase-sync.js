@@ -338,7 +338,7 @@
       }
       try {
         var res = await sb().from('knowledge_base')
-          .select('id, category, content, tags, source, created_at')
+          .select('id, category, content, tags, source, owner, scope, product, status, reviewed_by, reviewed_at, created_at')
           .is('deleted_at', null)
           .order('id');
         if (res.error) throw res.error;
@@ -353,16 +353,39 @@
       } catch (e) { console.warn('[SB] getKB err', e); return []; }
     },
 
-    async addKnowledge(category, content, source, tags) {
+    async addKnowledge(category, content, source, tags, owner, product) {
       if (!sb()) return null;
       try {
+        var row = { category: category, content: content, source: source || 'user', tags: tags || [],
+          owner: owner || null, scope: 'personal', status: 'pending_review' };
+        if (product) row.product = product;
         var res = await sb().from('knowledge_base')
-          .insert({ category: category, content: content, source: source || 'user', tags: tags || [] })
+          .insert(row)
           .select('id').single();
         if (res.error) throw res.error;
         this._kbCache = null;
         return res.data ? res.data.id : null;
       } catch (e) { console.warn('[SB] addKB err', e); return null; }
+    },
+
+    async approveKnowledge(kbId, scope, product, reviewedBy) {
+      if (!kbId || !sb()) return;
+      try {
+        var upd = { status: 'approved', scope: scope || 'team', reviewed_by: reviewedBy, reviewed_at: new Date().toISOString() };
+        if (scope === 'product' && product) upd.product = product;
+        await sb().from('knowledge_base').update(upd).eq('id', kbId);
+        this._kbCache = null;
+      } catch (e) { console.warn('[SB] approveKB err', e); }
+    },
+
+    async rejectKnowledge(kbId, reviewedBy) {
+      if (!kbId || !sb()) return;
+      try {
+        await sb().from('knowledge_base').update({
+          status: 'rejected', reviewed_by: reviewedBy, reviewed_at: new Date().toISOString()
+        }).eq('id', kbId);
+        this._kbCache = null;
+      } catch (e) { console.warn('[SB] rejectKB err', e); }
     },
 
     async getKBHistory(kbId) {

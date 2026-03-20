@@ -4153,61 +4153,38 @@ function renderNegKWCenter() {
 })();
 
 // ═══════════════════════════════════════
-// AI 知识库 + 优化师知识库（双 Tab，右侧 Drawer 交互）
+// 知识库（4 Tab：优化组 / 分产品 / 我的 / 待评审）
 // ═══════════════════════════════════════
-(function initKnowledgeTabs() {
+(function initKnowledgeModule() {
 
-  const AI_CATS = {
-    ai_threshold:    '📊 指标判断阈值',
-    ai_qs_rule:      '🎯 Quality Score 诊断',
-    ai_search_term:  '🔍 搜索词分析规则',
-    ai_negkw_rule:   '🚫 否定词诊断规则',
-    ai_structure:    '🏗️ Campaign 结构分析',
-    ai_bid_strategy: '💰 出价策略判断',
-    ai_anomaly:      '⚠️ 异常检测规则',
-    ai_geo_device:   '🌍 地区×设备策略',
-    ai_audience:     '👥 受众规则',
-    ai_relevance:    '🔗 相关性链条',
-    ai_keyword_method:'🔑 关键词方法论',
-    ai_budget:       '💵 预算分配',
-    ai_sop:          '📋 投放SOP与业务参数',
+  const ADMIN_USER = 'gaoruowei';
+  const PRODUCT_LABELS = { ft: 'Ft (Fachat)', pu: 'Pu (Parau)', ppt: 'Ppt (PinkPinkChat)' };
+  const CAT_LABELS = {
+    ai_threshold: '📊 指标判断阈值', ai_qs_rule: '🎯 QS 诊断', ai_search_term: '🔍 搜索词规则',
+    ai_negkw_rule: '🚫 否定词规则', ai_structure: '🏗️ Campaign 结构', ai_bid_strategy: '💰 出价策略',
+    ai_anomaly: '⚠️ 异常检测', ai_geo_device: '🌍 地区×设备', ai_audience: '👥 受众',
+    ai_relevance: '🔗 相关性', ai_keyword_method: '🔑 关键词方法论', ai_budget: '💵 预算分配',
+    ai_sop: '📋 SOP', brand_keyword: '🏷️ 品牌词', negkw_rule: '🚫 否定词',
+    campaign_rule: '📋 Campaign 规则', user_correction: '✏️ 用户纠正',
   };
 
-  const OPT_CATS = {
-    brand_keyword:   '🏷️ 品牌词定义',
-    negkw_rule:      '🚫 否定词规则',
-    campaign_rule:   '📋 Campaign 规则',
-    user_correction: '✏️ 用户纠正',
-  };
+  function curUser() { return (typeof SOAuth !== 'undefined' && SOAuth.getUser) ? SOAuth.getUser() : null; }
+  function isAdmin() { return curUser() === ADMIN_USER; }
+  function fmtTime(ts) { return ts ? new Date(ts).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) : ''; }
 
   const KB_NOTES_KEY = 'kb_item_notes';
   function loadKBNotes() { try { return JSON.parse(localStorage.getItem(KB_NOTES_KEY) || '{}'); } catch { return {}; } }
   function saveKBNotes(d) { localStorage.setItem(KB_NOTES_KEY, JSON.stringify(d)); }
   function getKBNotes(kbId) { return (loadKBNotes()['kb_' + kbId] || []).sort((a, b) => a.ts - b.ts); }
-
   function addKBNote(kbId, text, role) {
-    const key = 'kb_' + kbId, ts = Date.now();
-    const all = loadKBNotes();
+    const key = 'kb_' + kbId, ts = Date.now(), all = loadKBNotes();
     if (!all[key]) all[key] = [];
     all[key].push({ text, role: role || 'user', ts });
     saveKBNotes(all);
-    if (typeof SBSync !== 'undefined') {
-      SBSync.addNote('kb', key, text, role || 'user', ts).then(sbId => {
-        if (sbId != null) {
-          const a2 = loadKBNotes(), arr = a2[key] || [];
-          for (let i = arr.length - 1; i >= 0; i--) {
-            if (arr[i].ts === ts && arr[i].text === text && !arr[i]._sbId) { arr[i]._sbId = sbId; break; }
-          }
-          saveKBNotes(a2);
-        }
-      }).catch(() => {});
-    }
+    if (typeof SBSync !== 'undefined') SBSync.addNote('kb', key, text, role || 'user', ts).catch(() => {});
   }
-
   function deleteKBNote(kbId, idx) {
-    const key = 'kb_' + kbId;
-    const all = loadKBNotes();
-    const arr = all[key] || [];
+    const key = 'kb_' + kbId, all = loadKBNotes(), arr = all[key] || [];
     if (idx >= 0 && idx < arr.length) {
       const removed = arr.splice(idx, 1)[0];
       saveKBNotes(all);
@@ -4215,300 +4192,309 @@ function renderNegKWCenter() {
     }
   }
 
-  function updateKBNoteIndicator(kbId) {
-    const el = document.querySelector(`.ai-kb-item[data-kbid="${kbId}"] .ai-kb-item-note-count`);
-    if (el) {
-      const notes = getKBNotes(kbId);
-      el.textContent = notes.length > 0 ? notes.length + ' 条备注' : '';
-      el.style.display = notes.length > 0 ? '' : 'none';
-    }
-  }
-
-  function openKBDrawer(item, catLabel) {
-    const overlay = U.el('drawer-overlay');
-    const drawer = U.el('kw-drawer');
+  // ── Drawer ──
+  function openKBDrawer(item) {
+    const overlay = U.el('drawer-overlay'), drawer = U.el('kw-drawer');
+    const catLabel = CAT_LABELS[item.category] || item.category || '知识';
     U.el('drawer-title').textContent = catLabel;
-    const createdStr = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN', { year:'numeric', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
-    U.el('drawer-subtitle').innerHTML = `知识 #${item.id} · 创建于 ${createdStr}`;
+    const meta = [`#${item.id}`];
+    if (item.owner) meta.push('by ' + item.owner);
+    if (item.product) meta.push(PRODUCT_LABELS[item.product] || item.product);
+    meta.push(fmtTime(item.created_at));
+    U.el('drawer-subtitle').innerHTML = meta.join(' · ');
 
-    let historyHtml = '<div class="muted" style="padding:8px 0;font-size:12px;">加载中...</div>';
-    if (typeof SBSync !== 'undefined' && SBSync.getKBHistory) {
-      SBSync.getKBHistory(item.id).then(history => {
-        const el = document.getElementById('kb-history-list');
-        if (!el) return;
-        if (history.length <= 1) {
-          el.innerHTML = '<div class="muted" style="padding:8px 0;font-size:12px;">无修改历史（当前为原始版本）</div>';
-          return;
-        }
-        let h = '';
-        history.forEach((v, idx) => {
-          const isOriginal = v.id === item.id;
-          const isDeleted = !!v.deleted_at;
-          const time = new Date(v.created_at).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
-          const srcLabel = v.source === 'user_correction' ? '用户纠正' : v.source === 'manual' ? '手动' : v.source === 'system' ? '系统' : v.source || '';
-          const badge = isOriginal ? '<span style="background:#4f46e5;color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:6px;">当前</span>' :
-                        isDeleted ? '<span style="background:var(--red-bg,#fef2f2);color:var(--red);padding:1px 6px;border-radius:4px;font-size:10px;margin-left:6px;">已删除</span>' : '';
-          h += `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border,#f1f5f9);${isDeleted ? 'opacity:0.5;' : ''}">
-            <div style="width:24px;height:24px;border-radius:50%;background:${isOriginal ? '#4f46e515' : '#f1f5f9'};color:${isOriginal ? '#4f46e5' : 'var(--text3)'};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;">${idx + 1}</div>
-            <div style="flex:1;">
-              <div style="font-size:12px;line-height:1.6;${isDeleted ? 'text-decoration:line-through;' : ''}">${v.content}</div>
-              <div style="font-size:11px;color:var(--text3);margin-top:2px;">${srcLabel} · ${time}${badge}</div>
-            </div>
-          </div>`;
-        });
-        el.innerHTML = h;
-      });
-    }
-
-    function renderContent() {
+    function render() {
       const notes = getKBNotes(item.id);
-      let html = '';
-
-      html += `<div class="drawer-section"><div class="drawer-section-title">📋 规则内容</div>
+      let html = `<div class="drawer-section"><div class="drawer-section-title">📋 内容</div>
         <div class="drawer-verdict"><div class="drawer-verdict-detail" style="font-size:14px;line-height:1.8;">${item.content}</div></div></div>`;
-
-      html += `<div class="drawer-section"><div class="drawer-section-title">📜 版本历史</div>
-        <div id="kb-history-list" style="max-height:240px;overflow-y:auto;">${historyHtml}</div></div>`;
-
       if (item.tags && item.tags.length) {
-        html += `<div class="drawer-section"><div class="drawer-section-title">🏷️ 标签</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;">`;
-        item.tags.forEach(t => { html += `<span style="background:var(--bg-sub);padding:3px 10px;border-radius:6px;font-size:12px;color:var(--text2);">${t}</span>`; });
+        html += `<div class="drawer-section"><div class="drawer-section-title">🏷️ 标签</div><div style="display:flex;gap:6px;flex-wrap:wrap;">`;
+        item.tags.forEach(t => { html += `<span style="background:var(--bg-sub,#f1f5f9);padding:3px 10px;border-radius:6px;font-size:12px;color:var(--text2);">${t}</span>`; });
         html += '</div></div>';
       }
-
-      html += `<div class="drawer-section"><div class="drawer-section-title">💬 备注与纠正 (${notes.length})</div>`;
+      html += `<div class="drawer-section"><div class="drawer-section-title">💬 备注 (${notes.length})</div>`;
       html += '<div class="note-thread" id="kb-drawer-notes" style="max-height:320px;overflow-y:auto;">';
-      if (notes.length === 0) {
-        html += '<div class="muted" style="text-align:center;padding:16px;font-size:13px;">如果这条规则有误，在此纠正，AI 下次分析会自动参考</div>';
-      } else {
-        notes.forEach((n, i) => {
-          const time = new Date(n.ts).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
-          html += `<div class="note-bubble note-${n.role}">
-            <div>${n.text.replace(/\n/g, '<br>')}</div>
-            <div class="note-time">${n.role === 'user' ? '我' : '系统'} · ${time}
-              <button class="note-delete-btn kb-drawer-del" data-idx="${i}" title="删除">✕</button>
-            </div>
-          </div>`;
-        });
-      }
-      html += '</div>';
-      html += `<div class="note-input-wrap">
-        <textarea class="note-input" id="kb-drawer-input" placeholder="输入纠正或备注…" rows="2"></textarea>
-        <button class="note-send-btn" id="kb-drawer-send">发送</button>
-      </div></div>`;
-
+      if (!notes.length) html += '<div class="muted" style="text-align:center;padding:16px;font-size:13px;">暂无备注</div>';
+      else notes.forEach((n, i) => {
+        html += `<div class="note-bubble note-${n.role}"><div>${n.text.replace(/\n/g,'<br>')}</div>
+          <div class="note-time">${n.role === 'user' ? '我' : '系统'} · ${fmtTime(n.ts)}
+            <button class="note-delete-btn kb-drawer-del" data-idx="${i}" title="删除">✕</button></div></div>`;
+      });
+      html += `</div><div class="note-input-wrap">
+        <textarea class="note-input" id="kb-drawer-input" placeholder="备注或纠正…" rows="2"></textarea>
+        <button class="note-send-btn" id="kb-drawer-send">发送</button></div></div>`;
       U.html('drawer-body', html);
-
       U.el('kb-drawer-send').addEventListener('click', () => {
-        const input = U.el('kb-drawer-input');
-        const text = input.value.trim();
-        if (!text) return;
-        addKBNote(item.id, text, 'user');
-        input.value = '';
-        renderContent();
-        updateKBNoteIndicator(item.id);
-        setTimeout(() => {
-          const thread = document.getElementById('kb-drawer-notes');
-          if (thread) thread.scrollTop = thread.scrollHeight;
-        }, 50);
-        if (typeof SBSync !== 'undefined' && SBSync.addKnowledge) {
-          SBSync.addKnowledge('user_correction', '针对知识#' + item.id + '的纠正：' + text, 'user_correction', ['correction', 'kb_' + item.id]);
-        }
+        const t = U.el('kb-drawer-input').value.trim(); if (!t) return;
+        addKBNote(item.id, t, 'user'); U.el('kb-drawer-input').value = ''; render();
       });
+      U.el('kb-drawer-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); U.el('kb-drawer-send').click(); } });
+      document.querySelectorAll('.kb-drawer-del').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); deleteKBNote(item.id, +b.dataset.idx); render(); }));
+    }
+    render(); overlay.classList.add('open'); drawer.classList.add('open');
+  }
 
-      U.el('kb-drawer-input').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); U.el('kb-drawer-send').click(); }
+  // ── Rendering helpers ──
+  function renderItemCard(k, opts) {
+    const notes = getKBNotes(k.id);
+    const notesBadge = notes.length > 0 ? `<span class="ai-kb-item-note-count">${notes.length} 条备注</span>` : '';
+    const ownerTag = k.owner && k.owner !== 'system' ? `<span style="font-size:10px;background:var(--blue-bg,#eff6ff);color:var(--blue,#2563eb);padding:1px 8px;border-radius:4px;">${k.owner}</span>` : '';
+    const productTag = k.product ? `<span style="font-size:10px;background:var(--purple-bg,#f5f3ff);color:var(--purple,#7c3aed);padding:1px 8px;border-radius:4px;">${PRODUCT_LABELS[k.product] || k.product}</span>` : '';
+    const catTag = CAT_LABELS[k.category] ? `<span style="font-size:10px;color:var(--text3);">${CAT_LABELS[k.category]}</span>` : '';
+    const delBtn = opts.canDelete ? `<button class="kb-del-btn" data-id="${k.id}" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;padding:2px 4px;flex-shrink:0;" title="删除">✕</button>` : '';
+    const checkbox = opts.showCheckbox ? `<input type="checkbox" class="kb-review-check" data-id="${k.id}" style="flex-shrink:0;width:16px;height:16px;cursor:pointer;accent-color:var(--accent);" />` : '';
+    return `<div class="ai-kb-item" data-kbid="${k.id}" style="cursor:pointer;">
+      <div class="ai-kb-item-header">
+        ${checkbox}
+        <div class="ai-kb-item-content" style="font-size:13px;line-height:1.7;flex:1;">
+          <div>${k.content}</div>
+          <div style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            ${ownerTag}${productTag}${catTag}
+            <span style="font-size:10px;color:var(--text3);">${fmtTime(k.created_at)}</span>
+          </div>
+        </div>
+        ${notesBadge}${delBtn}
+        <span style="color:var(--text3);font-size:14px;flex-shrink:0;">›</span>
+      </div>
+    </div>`;
+  }
+
+  function bindItemClicks(container, items, opts) {
+    container.querySelectorAll('.ai-kb-item').forEach(el => {
+      el.addEventListener('click', e => {
+        if (e.target.closest('.kb-del-btn') || e.target.closest('.kb-review-check')) return;
+        const found = items.find(k => k.id === +el.dataset.kbid);
+        if (found) openKBDrawer(found);
       });
-
-      document.querySelectorAll('.kb-drawer-del').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+    });
+    if (opts.canDelete) {
+      container.querySelectorAll('.kb-del-btn').forEach(btn => {
+        btn.addEventListener('click', async e => {
           e.stopPropagation();
-          deleteKBNote(item.id, parseInt(btn.dataset.idx));
-          renderContent();
-          updateKBNoteIndicator(item.id);
+          if (!confirm('确认删除？')) return;
+          await SBSync.deleteKnowledge(+btn.dataset.id);
+          renderCurrentTab();
         });
       });
     }
-
-    renderContent();
-    overlay.classList.add('open');
-    drawer.classList.add('open');
   }
 
-  // ── AI Knowledge Tab ──
+  function emptyMsg(text) { return `<div class="muted" style="text-align:center;padding:40px;font-size:13px;">${text}</div>`; }
 
-  async function renderAIKB() {
-    const listEl = document.getElementById('ai-kb-list');
-    if (!listEl) return;
+  // ── Tab state ──
+  let activeTab = 'team';
+  const listEl = document.getElementById('kb-list');
+  const productFilter = document.getElementById('kb-product-filter');
+  const productSelect = document.getElementById('kb-product-select');
 
-    if (typeof SBSync !== 'undefined' && SBSync.clearKnowledgeCache) SBSync.clearKnowledgeCache();
-
-    if (typeof SBSync === 'undefined' || !SBSync.getKnowledge) {
-      listEl.innerHTML = '<div class="muted" style="text-align:center;padding:40px;">Supabase 未连接</div>';
-      return;
-    }
-
-    const all = await SBSync.getKnowledge();
-    const aiItems = all.filter(k => k.category && k.category.startsWith('ai_'));
-
-    if (aiItems.length === 0) {
-      listEl.innerHTML = '<div class="muted" style="text-align:center;padding:40px;">暂无 AI 规则</div>';
-      return;
-    }
-
-    const grouped = {};
-    aiItems.forEach(k => {
-      const cat = k.category;
-      if (!grouped[cat]) grouped[cat] = [];
-      grouped[cat].push(k);
-    });
-
-    const catOrder = Object.keys(AI_CATS);
-    let html = '';
-    catOrder.forEach(cat => {
-      const entries = grouped[cat];
-      if (!entries || entries.length === 0) return;
-      const label = AI_CATS[cat] || cat;
-      html += `<div class="ai-kb-group card">
-        <div class="ai-kb-group-title">${label} (${entries.length})</div>`;
-      entries.forEach(k => {
-        const notes = getKBNotes(k.id);
-        const notesBadge = `<span class="ai-kb-item-note-count" style="${notes.length > 0 ? '' : 'display:none;'}">${notes.length > 0 ? notes.length + ' 条备注' : ''}</span>`;
-        const timeStr = k.created_at ? new Date(k.created_at).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
-        html += `<div class="ai-kb-item" data-kbid="${k.id}" data-cat="${label}" style="cursor:pointer;">
-          <div class="ai-kb-item-header">
-            <div class="ai-kb-item-content" style="font-size:13px;line-height:1.7;">
-              ${k.content}
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-              ${notesBadge}
-              <span style="font-size:11px;color:var(--text3);white-space:nowrap;">${timeStr}</span>
-              <span style="color:var(--text3);font-size:14px;">›</span>
-            </div>
-          </div>
-        </div>`;
-      });
-      html += '</div>';
-    });
-
-    listEl.innerHTML = html;
-
-    listEl.querySelectorAll('.ai-kb-item').forEach(el => {
-      el.addEventListener('click', () => {
-        const kbId = parseInt(el.dataset.kbid);
-        const catL = el.dataset.cat;
-        const found = aiItems.find(k => k.id === kbId);
-        if (found) openKBDrawer(found, catL);
-      });
-    });
+  async function fetchAll() {
+    if (typeof SBSync === 'undefined' || !SBSync.getKnowledge) return [];
+    SBSync.clearKnowledgeCache();
+    return await SBSync.getKnowledge();
   }
 
-  // ── Optimizer Knowledge Tab ──
-
-  async function renderOptKB() {
-    const listEl = document.getElementById('opt-kb-list');
-    const countEl = document.getElementById('opt-kb-count');
+  // ── Tab: 优化组知识库 ──
+  async function renderTeam() {
     if (!listEl) return;
-
-    if (typeof SBSync !== 'undefined' && SBSync.clearKnowledgeCache) SBSync.clearKnowledgeCache();
-
-    if (typeof SBSync === 'undefined' || !SBSync.getKnowledge) {
-      listEl.innerHTML = '<div class="muted" style="text-align:center;padding:40px;">Supabase 未连接</div>';
-      return;
-    }
-
-    const all = await SBSync.getKnowledge();
-    const optItems = all.filter(k => !k.category || !k.category.startsWith('ai_'));
-
-    if (countEl) countEl.textContent = optItems.length + ' 条';
-
-    if (optItems.length === 0) {
-      listEl.innerHTML = '<div class="muted" style="text-align:center;padding:40px;font-size:13px;">暂无优化师知识。来源：手动新增、诊断纠正（📌）、AI 建议修正。</div>';
-      return;
-    }
-
+    const all = await fetchAll();
+    const items = all.filter(k => k.scope === 'team' && k.status === 'approved');
+    if (!items.length) { listEl.innerHTML = emptyMsg('暂无优化组知识。通过评审的知识会出现在这里。'); return; }
     const grouped = {};
-    optItems.forEach(k => {
-      const cat = k.category || 'user_correction';
-      if (!grouped[cat]) grouped[cat] = [];
-      grouped[cat].push(k);
-    });
-
+    items.forEach(k => { const c = k.category || 'user_correction'; if (!grouped[c]) grouped[c] = []; grouped[c].push(k); });
     let html = '';
     Object.entries(grouped).forEach(([cat, entries]) => {
-      const label = OPT_CATS[cat] || cat;
-      html += `<div class="ai-kb-group">
-        <div class="ai-kb-group-title">${label} (${entries.length})</div>`;
-      entries.forEach(k => {
-        const notes = getKBNotes(k.id);
-        const notesBadge = `<span class="ai-kb-item-note-count" style="${notes.length > 0 ? '' : 'display:none;'}">${notes.length > 0 ? notes.length + ' 条备注' : ''}</span>`;
-        const sourceLabel = k.source === 'user_correction' ? '纠正' : k.source === 'manual' ? '手动' : k.source === 'system' ? '系统' : k.source;
-        const timeStr = k.created_at ? new Date(k.created_at).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
-        html += `<div class="ai-kb-item" data-kbid="${k.id}" data-cat="${label}" style="cursor:pointer;">
-          <div class="ai-kb-item-header">
-            <div class="ai-kb-item-content" style="font-size:13px;line-height:1.7;">
-              <div>${k.content}</div>
-              <div style="margin-top:4px;font-size:11px;color:var(--text3);">来源: ${sourceLabel} · ${timeStr}</div>
-            </div>
-            ${notesBadge}
-            <button class="opt-kb-del" data-id="${k.id}" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;padding:2px 4px;flex-shrink:0;" title="删除">✕</button>
-            <span style="color:var(--text3);font-size:14px;flex-shrink:0;">›</span>
-          </div>
-        </div>`;
-      });
+      html += `<div class="ai-kb-group card"><div class="ai-kb-group-title">${CAT_LABELS[cat] || cat} (${entries.length})</div>`;
+      entries.forEach(k => { html += renderItemCard(k, { canDelete: isAdmin() }); });
       html += '</div>';
     });
-
     listEl.innerHTML = html;
-
-    listEl.querySelectorAll('.ai-kb-item').forEach(el => {
-      el.addEventListener('click', (e) => {
-        if (e.target.closest('.opt-kb-del')) return;
-        const kbId = parseInt(el.dataset.kbid);
-        const catL = el.dataset.cat;
-        const found = optItems.find(k => k.id === kbId);
-        if (found) openKBDrawer(found, catL);
-      });
-    });
-
-    listEl.querySelectorAll('.opt-kb-del').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        if (!confirm('确认删除该知识条目？')) return;
-        await SBSync.deleteKnowledge(parseInt(btn.dataset.id));
-        renderOptKB();
-      });
-    });
+    bindItemClicks(listEl, items, { canDelete: isAdmin() });
   }
 
-  const addBtn = document.getElementById('opt-kb-add-btn');
+  // ── Tab: 分产品知识库 ──
+  async function renderProduct() {
+    if (!listEl) return;
+    productFilter.style.display = '';
+    const pf = productSelect.value;
+    const all = await fetchAll();
+    let items = all.filter(k => k.scope === 'product' && k.status === 'approved');
+    if (pf !== 'all') items = items.filter(k => k.product === pf);
+    if (!items.length) { listEl.innerHTML = emptyMsg('暂无分产品知识。评审时选择产品分类后会出现在这里。'); return; }
+    const byProduct = {};
+    items.forEach(k => { const p = k.product || 'other'; if (!byProduct[p]) byProduct[p] = []; byProduct[p].push(k); });
+    let html = '';
+    Object.entries(byProduct).forEach(([p, entries]) => {
+      html += `<div class="ai-kb-group card"><div class="ai-kb-group-title">${PRODUCT_LABELS[p] || p} (${entries.length})</div>`;
+      entries.forEach(k => { html += renderItemCard(k, { canDelete: isAdmin() }); });
+      html += '</div>';
+    });
+    listEl.innerHTML = html;
+    bindItemClicks(listEl, items, { canDelete: isAdmin() });
+  }
+
+  // ── Tab: 我的知识库 ──
+  async function renderPersonal() {
+    if (!listEl) return;
+    const me = curUser();
+    const all = await fetchAll();
+    const items = all.filter(k => k.owner === me);
+    if (!items.length) { listEl.innerHTML = emptyMsg('你还没有添加知识。点击右上角「+ 新增知识」开始沉淀。'); return; }
+    let html = '';
+    items.forEach(k => {
+      const statusBadge = k.status === 'approved'
+        ? '<span style="font-size:10px;background:var(--green-bg);color:var(--green);padding:1px 8px;border-radius:4px;">已通过</span>'
+        : k.status === 'rejected'
+          ? '<span style="font-size:10px;background:var(--red-bg);color:var(--red);padding:1px 8px;border-radius:4px;">未通过</span>'
+          : '<span style="font-size:10px;background:var(--orange-bg);color:var(--orange);padding:1px 8px;border-radius:4px;">待评审</span>';
+      html += `<div class="ai-kb-item" data-kbid="${k.id}" style="cursor:pointer;">
+        <div class="ai-kb-item-header">
+          <div class="ai-kb-item-content" style="font-size:13px;line-height:1.7;flex:1;">
+            <div>${k.content}</div>
+            <div style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+              ${statusBadge}
+              ${k.product ? `<span style="font-size:10px;color:var(--text3);">${PRODUCT_LABELS[k.product] || k.product}</span>` : ''}
+              <span style="font-size:10px;color:var(--text3);">${fmtTime(k.created_at)}</span>
+            </div>
+          </div>
+          <button class="kb-del-btn" data-id="${k.id}" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;padding:2px 4px;" title="删除">✕</button>
+          <span style="color:var(--text3);font-size:14px;">›</span>
+        </div>
+      </div>`;
+    });
+    listEl.innerHTML = html;
+    bindItemClicks(listEl, items, { canDelete: true });
+  }
+
+  // ── Tab: 待评审 ──
+  async function renderReview() {
+    if (!listEl) return;
+    const me = curUser();
+    const admin = isAdmin();
+    const all = await fetchAll();
+    const items = admin ? all.filter(k => k.status === 'pending_review') : all.filter(k => k.status === 'pending_review' && k.owner === me);
+    updateReviewBadge(items.length);
+    if (!items.length) { listEl.innerHTML = emptyMsg(admin ? '没有待评审的知识条目。' : '你没有待评审的知识。'); return; }
+    let html = '';
+    if (admin) {
+      html += `<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+        <button id="kb-review-approve" style="padding:6px 16px;border-radius:6px;border:1px solid var(--green);background:var(--green-bg);color:var(--green);font-size:12px;font-weight:600;cursor:pointer;">批准选中 →</button>
+        <select id="kb-review-scope" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;">
+          <option value="team">→ 优化组知识库</option>
+          <option value="product">→ 分产品知识库</option>
+        </select>
+        <select id="kb-review-product" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;display:none;">
+          <option value="ft">Ft (Fachat)</option>
+          <option value="pu">Pu (Parau)</option>
+          <option value="ppt">Ppt (PinkPinkChat)</option>
+        </select>
+        <button id="kb-review-reject" style="padding:6px 16px;border-radius:6px;border:1px solid var(--red);background:var(--red-bg);color:var(--red);font-size:12px;font-weight:600;cursor:pointer;">驳回选中</button>
+      </div>`;
+    }
+    items.forEach(k => { html += renderItemCard(k, { canDelete: admin, showCheckbox: admin }); });
+    listEl.innerHTML = html;
+    bindItemClicks(listEl, items, { canDelete: admin });
+
+    if (admin) {
+      const scopeSel = document.getElementById('kb-review-scope');
+      const prodSel = document.getElementById('kb-review-product');
+      scopeSel.addEventListener('change', () => { prodSel.style.display = scopeSel.value === 'product' ? '' : 'none'; });
+
+      document.getElementById('kb-review-approve').addEventListener('click', async () => {
+        const checked = [...listEl.querySelectorAll('.kb-review-check:checked')].map(c => +c.dataset.id);
+        if (!checked.length) { alert('请先勾选要批准的条目'); return; }
+        const scope = scopeSel.value;
+        const product = scope === 'product' ? prodSel.value : null;
+        for (const id of checked) await SBSync.approveKnowledge(id, scope, product, me);
+        renderReview();
+      });
+
+      document.getElementById('kb-review-reject').addEventListener('click', async () => {
+        const checked = [...listEl.querySelectorAll('.kb-review-check:checked')].map(c => +c.dataset.id);
+        if (!checked.length) { alert('请先勾选要驳回的条目'); return; }
+        if (!confirm(`确认驳回 ${checked.length} 条？`)) return;
+        for (const id of checked) await SBSync.rejectKnowledge(id, me);
+        renderReview();
+      });
+    }
+  }
+
+  function updateReviewBadge(count) {
+    const b1 = document.getElementById('kb-review-badge');
+    const b2 = document.getElementById('nav-review-count');
+    if (b1) { b1.textContent = count; b1.style.display = count > 0 ? '' : 'none'; }
+    if (b2) { b2.textContent = count; b2.style.display = count > 0 ? '' : 'none'; }
+  }
+
+  // ── Tab switching ──
+  function renderCurrentTab() {
+    if (productFilter) productFilter.style.display = 'none';
+    if (activeTab === 'team') renderTeam();
+    else if (activeTab === 'product') renderProduct();
+    else if (activeTab === 'personal') renderPersonal();
+    else if (activeTab === 'review') renderReview();
+  }
+
+  document.querySelectorAll('.kb-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      activeTab = tab.dataset.kbTab;
+      document.querySelectorAll('.kb-tab').forEach(t => {
+        const isActive = t === tab;
+        t.classList.toggle('active', isActive);
+        t.style.borderBottomColor = isActive ? 'var(--accent)' : 'transparent';
+        t.style.color = isActive ? 'var(--accent)' : 'var(--text3)';
+      });
+      renderCurrentTab();
+    });
+  });
+
+  if (productSelect) productSelect.addEventListener('change', () => { if (activeTab === 'product') renderProduct(); });
+
+  // ── Add knowledge ──
+  const addBtn = document.getElementById('kb-add-btn');
   if (addBtn) {
     addBtn.addEventListener('click', () => {
-      const content = prompt('输入知识内容（AI 分析时会自动参考）：');
+      const me = curUser();
+      if (!me) { alert('请先登录'); return; }
+      const content = prompt('输入知识内容：');
       if (!content || !content.trim()) return;
-      const cats = Object.keys(OPT_CATS);
-      const catLabels = cats.map((c, i) => (i + 1) + '. ' + OPT_CATS[c]).join('\n');
-      const choice = prompt('选择分类（输入数字）：\n' + catLabels, '4');
-      const idx = parseInt(choice) - 1;
-      const cat = (idx >= 0 && idx < cats.length) ? cats[idx] : 'user_correction';
-      const tagStr = prompt('标签（逗号分隔，可留空）：', '');
-      const tags = tagStr ? tagStr.split(',').map(t => t.trim()).filter(Boolean) : [];
+      const catChoice = prompt('选择分类（输入数字）：\n1. 品牌词定义\n2. 否定词规则\n3. Campaign 规则\n4. 用户纠正/经验', '4');
+      const catMap = { '1': 'brand_keyword', '2': 'negkw_rule', '3': 'campaign_rule', '4': 'user_correction' };
+      const cat = catMap[catChoice] || 'user_correction';
+      const prodChoice = prompt('关联产品（可留空）：\n1. Ft  2. Pu  3. Ppt\n输入数字或直接回车跳过', '');
+      const prodMap = { '1': 'ft', '2': 'pu', '3': 'ppt' };
+      const product = prodMap[prodChoice] || null;
 
       if (typeof SBSync !== 'undefined' && SBSync.addKnowledge) {
-        SBSync.addKnowledge(cat, content.trim(), 'manual', tags).then(id => {
-          if (id) renderOptKB();
+        SBSync.addKnowledge(cat, content.trim(), 'manual', [], me, product).then(id => {
+          if (id) {
+            activeTab = 'personal';
+            document.querySelectorAll('.kb-tab').forEach(t => {
+              const isActive = t.dataset.kbTab === 'personal';
+              t.classList.toggle('active', isActive);
+              t.style.borderBottomColor = isActive ? 'var(--accent)' : 'transparent';
+              t.style.color = isActive ? 'var(--accent)' : 'var(--text3)';
+            });
+            renderCurrentTab();
+          }
         });
       }
     });
   }
 
+  // ── Nav trigger ──
   document.querySelectorAll('.nav-item').forEach(item => {
-    if (item.dataset.view === 'ai-knowledge') {
-      item.addEventListener('click', () => setTimeout(renderAIKB, 100));
-    }
-    if (item.dataset.view === 'optimizer-knowledge') {
-      item.addEventListener('click', () => setTimeout(renderOptKB, 100));
+    if (item.dataset.view === 'knowledge') {
+      item.addEventListener('click', () => setTimeout(renderCurrentTab, 100));
     }
   });
+
+  // Initial review badge
+  setTimeout(async () => {
+    try {
+      const all = await fetchAll();
+      const pending = isAdmin() ? all.filter(k => k.status === 'pending_review') : all.filter(k => k.status === 'pending_review' && k.owner === curUser());
+      updateReviewBadge(pending.length);
+    } catch (e) {}
+  }, 3000);
+
 })();

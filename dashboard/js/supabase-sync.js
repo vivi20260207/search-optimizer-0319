@@ -333,7 +333,7 @@
       }
       try {
         var res = await sb().from('knowledge_base')
-          .select('id, category, content, tags')
+          .select('id, category, content, tags, source, created_at')
           .is('deleted_at', null)
           .order('id');
         if (res.error) throw res.error;
@@ -358,6 +358,18 @@
         this._kbCache = null;
         return res.data ? res.data.id : null;
       } catch (e) { console.warn('[SB] addKB err', e); return null; }
+    },
+
+    async getKBHistory(kbId) {
+      if (!sb()) return [];
+      try {
+        var res = await sb().from('knowledge_base')
+          .select('id, category, content, source, tags, created_at, deleted_at')
+          .or('id.eq.' + kbId + ',tags.cs.{kb_' + kbId + '}')
+          .order('created_at', { ascending: true });
+        if (res.error) throw res.error;
+        return res.data || [];
+      } catch (e) { console.warn('[SB] getKBHistory err', e); return []; }
     },
 
     async deleteKnowledge(kbId) {

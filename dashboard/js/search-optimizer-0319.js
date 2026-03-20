@@ -47,9 +47,9 @@ function normalizeMapData(mapObj) {
   Object.values(mapObj).forEach(normalizeRecords);
 }
 normalizeRecords(CAMPAIGN_SUMMARY);
-const ADW_MISSING_TEXT = '数据缺失（ADW未返回）';
+const ADW_MISSING_TEXT = '';
 function qsFieldText(v) {
-  return (v === '' || v == null) ? ADW_MISSING_TEXT : v;
+  return (v === '' || v == null) ? '' : v;
 }
 
 regKW('pu-web-IN-2.5-竞品词-6.14重开', typeof ADW_PU_IN_COMP_KEYWORDS !== 'undefined' ? ADW_PU_IN_COMP_KEYWORDS : []);
@@ -1219,7 +1219,7 @@ function renderDrillDown() {
             <td class="num">${kw.impressions ? U.fmtPct(U.pct(kw.clicks, kw.impressions)) : '--'}</td>
             <td class="num">${U.fmt(kw.cpc)}</td>
             <td style="font-size:10px;white-space:normal">
-              <span class="bold ${qsCls}">QS ${kw.qualityScore || ADW_MISSING_TEXT}</span>
+              <span class="bold ${qsCls}">QS ${kw.qualityScore || '—'}</span>
               <span class="${eCtr.cls}" data-tip="Expected CTR: ${qsFieldText(kw.expectedCTR)}">CTR${eCtr.text}</span>
               <span class="${aRel.cls}" data-tip="Ad Relevance: ${qsFieldText(kw.adRelevance)}">Rel${aRel.text}</span>
               <span class="${lpExp.cls}" data-tip="LP Exp: ${qsFieldText(kw.landingPageExp)}">LP${lpExp.text}</span>
@@ -1642,6 +1642,7 @@ function renderSearchTermsEnhanced() {
       <div><strong>有 QS 的词：</strong>${kwWithQS.length}</div>
       <div><strong>均 CPC：</strong>${U.fmt(avgCPC)}</div>
       <div><strong>总转化：</strong>${U.fmt(totalKwConv, 0)}</div>
+      <div style="margin-left:auto;color:#94a3b8;font-size:11px;">QS 为空代表：数据缺失（ADW未返回）</div>
     `);
     if (hasCostData) {
       U.el('kw-thead').querySelector('tr').innerHTML = '<th>关键词</th><th>匹配</th><th class="num">点击</th><th class="num">展示</th><th class="num">CTR</th><th class="num">CPC</th><th class="num">花费</th><th class="num">转化</th><th class="num">转化价值</th><th class="num">CPA</th><th class="num">ROAS</th><th class="num">QS</th><th>QS↔CPC</th><th class="num">IS</th><th>操作建议</th>';
@@ -1865,7 +1866,7 @@ function openKeywordDrawer(kw, allTerms, campLabel) {
 
   let body = '';
   const hasQS = kw.qualityScore !== '' && kw.qualityScore != null;
-  const qsDisplay = hasQS ? kw.qualityScore : ADW_MISSING_TEXT;
+  const qsDisplay = hasQS ? kw.qualityScore : '—';
 
   // KPI metrics
   body += `<div class="drawer-section"><div class="drawer-section-title">📈 核心指标</div><div class="drawer-metrics">
@@ -4125,7 +4126,37 @@ function renderNegKWCenter() {
     const overlay = U.el('drawer-overlay');
     const drawer = U.el('kw-drawer');
     U.el('drawer-title').textContent = catLabel;
-    U.el('drawer-subtitle').innerHTML = `知识 #${item.id} · ${(item.tags || []).join(', ')}`;
+    const createdStr = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN', { year:'numeric', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
+    U.el('drawer-subtitle').innerHTML = `知识 #${item.id} · 创建于 ${createdStr}`;
+
+    let historyHtml = '<div class="muted" style="padding:8px 0;font-size:12px;">加载中...</div>';
+    if (typeof SBSync !== 'undefined' && SBSync.getKBHistory) {
+      SBSync.getKBHistory(item.id).then(history => {
+        const el = document.getElementById('kb-history-list');
+        if (!el) return;
+        if (history.length <= 1) {
+          el.innerHTML = '<div class="muted" style="padding:8px 0;font-size:12px;">无修改历史（当前为原始版本）</div>';
+          return;
+        }
+        let h = '';
+        history.forEach((v, idx) => {
+          const isOriginal = v.id === item.id;
+          const isDeleted = !!v.deleted_at;
+          const time = new Date(v.created_at).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
+          const srcLabel = v.source === 'user_correction' ? '用户纠正' : v.source === 'manual' ? '手动' : v.source === 'system' ? '系统' : v.source || '';
+          const badge = isOriginal ? '<span style="background:#4f46e5;color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:6px;">当前</span>' :
+                        isDeleted ? '<span style="background:var(--red-bg,#fef2f2);color:var(--red);padding:1px 6px;border-radius:4px;font-size:10px;margin-left:6px;">已删除</span>' : '';
+          h += `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border,#f1f5f9);${isDeleted ? 'opacity:0.5;' : ''}">
+            <div style="width:24px;height:24px;border-radius:50%;background:${isOriginal ? '#4f46e515' : '#f1f5f9'};color:${isOriginal ? '#4f46e5' : 'var(--text3)'};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;">${idx + 1}</div>
+            <div style="flex:1;">
+              <div style="font-size:12px;line-height:1.6;${isDeleted ? 'text-decoration:line-through;' : ''}">${v.content}</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:2px;">${srcLabel} · ${time}${badge}</div>
+            </div>
+          </div>`;
+        });
+        el.innerHTML = h;
+      });
+    }
 
     function renderContent() {
       const notes = getKBNotes(item.id);
@@ -4133,6 +4164,9 @@ function renderNegKWCenter() {
 
       html += `<div class="drawer-section"><div class="drawer-section-title">📋 规则内容</div>
         <div class="drawer-verdict"><div class="drawer-verdict-detail" style="font-size:14px;line-height:1.8;">${item.content}</div></div></div>`;
+
+      html += `<div class="drawer-section"><div class="drawer-section-title">📜 版本历史</div>
+        <div id="kb-history-list" style="max-height:240px;overflow-y:auto;">${historyHtml}</div></div>`;
 
       if (item.tags && item.tags.length) {
         html += `<div class="drawer-section"><div class="drawer-section-title">🏷️ 标签</div>
@@ -4237,13 +4271,17 @@ function renderNegKWCenter() {
       entries.forEach(k => {
         const notes = getKBNotes(k.id);
         const notesBadge = `<span class="ai-kb-item-note-count" style="${notes.length > 0 ? '' : 'display:none;'}">${notes.length > 0 ? notes.length + ' 条备注' : ''}</span>`;
+        const timeStr = k.created_at ? new Date(k.created_at).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
         html += `<div class="ai-kb-item" data-kbid="${k.id}" data-cat="${label}" style="cursor:pointer;">
           <div class="ai-kb-item-header">
             <div class="ai-kb-item-content" style="font-size:13px;line-height:1.7;">
               ${k.content}
             </div>
-            ${notesBadge}
-            <span style="color:var(--text3);font-size:14px;flex-shrink:0;">›</span>
+            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+              ${notesBadge}
+              <span style="font-size:11px;color:var(--text3);white-space:nowrap;">${timeStr}</span>
+              <span style="color:var(--text3);font-size:14px;">›</span>
+            </div>
           </div>
         </div>`;
       });
@@ -4300,11 +4338,12 @@ function renderNegKWCenter() {
         const notes = getKBNotes(k.id);
         const notesBadge = `<span class="ai-kb-item-note-count" style="${notes.length > 0 ? '' : 'display:none;'}">${notes.length > 0 ? notes.length + ' 条备注' : ''}</span>`;
         const sourceLabel = k.source === 'user_correction' ? '纠正' : k.source === 'manual' ? '手动' : k.source === 'system' ? '系统' : k.source;
+        const timeStr = k.created_at ? new Date(k.created_at).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
         html += `<div class="ai-kb-item" data-kbid="${k.id}" data-cat="${label}" style="cursor:pointer;">
           <div class="ai-kb-item-header">
             <div class="ai-kb-item-content" style="font-size:13px;line-height:1.7;">
               <div>${k.content}</div>
-              <div style="margin-top:4px;font-size:11px;color:var(--text3);">来源: ${sourceLabel}</div>
+              <div style="margin-top:4px;font-size:11px;color:var(--text3);">来源: ${sourceLabel} · ${timeStr}</div>
             </div>
             ${notesBadge}
             <button class="opt-kb-del" data-id="${k.id}" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;padding:2px 4px;flex-shrink:0;" title="删除">✕</button>

@@ -1,7 +1,17 @@
 .DS_Store
 .vercel
-fetch_adw_data.py
+logs/
+data/archive/
+
+# API 凭证 (绝对不能提交)
 google-ads.yaml
 google-ads-app.yaml
 google-ads-mcc-*.yaml
+
+# 含凭证的 fetch 脚本 (通过 GitHub Actions 或服务器部署)
+fetch_adw_data.py
+fetch_change_history.py
+fetch_negative_keywords.py
+fetch_app_change_history.py
+
 test_adw_connection.py

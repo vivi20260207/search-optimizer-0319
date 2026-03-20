@@ -1,0 +1,246 @@
+/**
+ * Supabase Sync Layer — Search Optimizer 中台
+ *
+ * 策略：Write-through cache
+ *   - localStorage 用于即时读取（UI 零延迟）
+ *   - Supabase 用于跨设备持久化 + 软删除历史
+ *   - 首次加载时自动把 localStorage 数据迁移到 Supabase
+ *   - 后续加载从 Supabase 拉取最新数据覆盖 localStorage
+ */
+(function () {
+  'use strict';
+
+  var SUPABASE_URL  = 'https://lthetksmtttdsdygnicj.supabase.co';
+  var SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx0aGV0a3NtdHR0ZHNkeWduaWNqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5NzY4MzIsImV4cCI6MjA4OTU1MjgzMn0.4kUg_mWph5-EUAQo6HslhtD_u4qJc66toso2TsLMk2o';
+
+  var _sb = null;
+  function sb() {
+    if (!_sb && typeof supabase !== 'undefined' && supabase.createClient) {
+      _sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    }
+    return _sb;
+  }
+
+  var LS = {
+    negkw:   'negkw_diag_notes',
+    rca:     'rca_diag_notes',
+    pb:      'POSTBACK_LOG_TEXT',
+    mNegkw:  '_sb_mig_negkw',
+    mRca:    '_sb_mig_rca',
+    mPb:     '_sb_mig_pb',
+    mSet:    '_sb_mig_settings'
+  };
+
+  window.SBSync = {
+    ready: false,
+
+    async init() {
+      if (!sb()) { console.warn('[SB] client unavailable'); return; }
+      try {
+        await Promise.all([
+          this._syncNotes('negkw'),
+          this._syncNotes('rca'),
+          this._syncPostback(),
+          this._syncSettings()
+        ]);
+        this.ready = true;
+        console.log('[SB] ✅ sync complete');
+      } catch (e) { console.error('[SB] init error', e); }
+    },
+
+    /* ─── Notes ─── */
+
+    async _syncNotes(type) {
+      var lsKey  = LS[type];
+      var migKey = type === 'negkw' ? LS.mNegkw : LS.mRca;
+
+      if (!localStorage.getItem(migKey)) {
+        try {
+          var local = JSON.parse(localStorage.getItem(lsKey) || '{}');
+          var ids = Object.keys(local);
+          if (ids.length) {
+            var rows = [];
+            ids.forEach(function (did) {
+              (local[did] || []).forEach(function (n) {
+                rows.push({
+                  note_type: type, diag_id: did, content: n.text,
+                  role: n.role || 'user',
+                  created_at: new Date(n.ts || Date.now()).toISOString()
+                });
+              });
+            });
+            if (rows.length) {
+              for (var i = 0; i < rows.length; i += 100) {
+                await sb().from('diagnostic_notes').insert(rows.slice(i, i + 100));
+              }
+              console.log('[SB] migrated ' + rows.length + ' ' + type + ' notes');
+            }
+          }
+        } catch (e) { console.warn('[SB] mig error ' + type, e); }
+        localStorage.setItem(migKey, '1');
+      }
+
+      try {
+        var res = await sb()
+          .from('diagnostic_notes')
+          .select('id, diag_id, content, role, created_at')
+          .eq('note_type', type)
+          .is('deleted_at', null)
+          .order('created_at', { ascending: true });
+
+        if (res.error) throw res.error;
+
+        var grouped = {};
+        (res.data || []).forEach(function (r) {
+          if (!grouped[r.diag_id]) grouped[r.diag_id] = [];
+          grouped[r.diag_id].push({
+            text: r.content, role: r.role,
+            ts: new Date(r.created_at).getTime(),
+            _sbId: r.id
+          });
+        });
+        localStorage.setItem(lsKey, JSON.stringify(grouped));
+        console.log('[SB] pulled ' + (res.data || []).length + ' ' + type + ' notes');
+      } catch (e) { console.warn('[SB] pull error ' + type, e); }
+    },
+
+    /* ─── Postback ─── */
+
+    async _syncPostback() {
+      if (!localStorage.getItem(LS.mPb)) {
+        var txt = localStorage.getItem(LS.pb) || '';
+        if (txt.trim()) {
+          var existing = await sb().from('postback_log').select('id').order('id').limit(1);
+          if (existing.data && existing.data.length) {
+            await sb().from('postback_log')
+              .update({ content: txt, updated_at: new Date().toISOString() })
+              .eq('id', existing.data[0].id);
+          } else {
+            await sb().from('postback_log').insert({ content: txt });
+          }
+          console.log('[SB] migrated postback');
+        }
+        localStorage.setItem(LS.mPb, '1');
+      }
+
+      var res = await sb().from('postback_log').select('content').order('updated_at', { ascending: false }).limit(1);
+      if (res.data && res.data.length) {
+        localStorage.setItem(LS.pb, res.data[0].content || '');
+        var ta = document.getElementById('postback-log-textarea');
+        if (ta && ta !== document.activeElement) ta.value = res.data[0].content || '';
+      }
+    },
+
+    /* ─── Settings ─── */
+
+    async _syncSettings() {
+      var keys = ['gemini_api_key', 'gemini_model'];
+
+      if (!localStorage.getItem(LS.mSet)) {
+        var rows = [];
+        keys.forEach(function (k) {
+          var v = localStorage.getItem(k);
+          if (v) rows.push({ key: k, value: v });
+        });
+        if (rows.length) {
+          await sb().from('user_settings').upsert(rows, { onConflict: 'key' }).catch(function () {});
+          console.log('[SB] migrated settings');
+        }
+        localStorage.setItem(LS.mSet, '1');
+      }
+
+      var res = await sb().from('user_settings').select('key, value');
+      if (res.data) res.data.forEach(function (r) { if (r.value) localStorage.setItem(r.key, r.value); });
+    },
+
+    /* ═══ Write Methods (fire-and-forget from UI code) ═══ */
+
+    async addNote(noteType, diagId, text, role, ts) {
+      if (!sb()) return null;
+      try {
+        var res = await sb().from('diagnostic_notes')
+          .insert({
+            note_type: noteType, diag_id: diagId, content: text,
+            role: role || 'user',
+            created_at: ts ? new Date(ts).toISOString() : new Date().toISOString()
+          })
+          .select('id')
+          .single();
+        if (res.error) throw res.error;
+        return res.data ? res.data.id : null;
+      } catch (e) { console.warn('[SB] addNote err', e); return null; }
+    },
+
+    async deleteNote(sbId) {
+      if (!sbId || !sb()) return;
+      try {
+        await sb().from('diagnostic_notes')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', sbId);
+      } catch (e) { console.warn('[SB] delNote err', e); }
+    },
+
+    async deleteLastSystemNote(noteType, diagId) {
+      if (!sb()) return;
+      try {
+        var res = await sb().from('diagnostic_notes')
+          .select('id')
+          .eq('note_type', noteType).eq('diag_id', diagId)
+          .eq('role', 'system').is('deleted_at', null)
+          .order('created_at', { ascending: false }).limit(1);
+        if (res.data && res.data.length) {
+          await sb().from('diagnostic_notes')
+            .update({ deleted_at: new Date().toISOString() })
+            .eq('id', res.data[0].id);
+        }
+      } catch (e) { console.warn('[SB] delLast err', e); }
+    },
+
+    async savePostback(content) {
+      if (!sb()) return;
+      try {
+        var existing = await sb().from('postback_log').select('id').order('id').limit(1);
+        if (existing.data && existing.data.length) {
+          await sb().from('postback_log')
+            .update({ content: content, updated_at: new Date().toISOString() })
+            .eq('id', existing.data[0].id);
+        } else {
+          await sb().from('postback_log').insert({ content: content });
+        }
+      } catch (e) { console.warn('[SB] savePB err', e); }
+    },
+
+    async saveSetting(key, value) {
+      if (!sb()) return;
+      try {
+        await sb().from('user_settings').upsert(
+          { key: key, value: value, updated_at: new Date().toISOString() },
+          { onConflict: 'key' }
+        );
+      } catch (e) { console.warn('[SB] saveSetting err', e); }
+    },
+
+    async deleteSetting(key) {
+      if (!sb()) return;
+      try { await sb().from('user_settings').delete().eq('key', key); }
+      catch (e) { console.warn('[SB] delSetting err', e); }
+    },
+
+    async saveSnapshot(dataType, snapshotDate, data, recordCount) {
+      if (!sb()) return;
+      try {
+        await sb().from('adw_snapshots').upsert({
+          data_type: dataType, snapshot_date: snapshotDate,
+          data: data, record_count: recordCount,
+          created_at: new Date().toISOString()
+        }, { onConflict: 'snapshot_date,data_type' });
+      } catch (e) { console.warn('[SB] saveSnap err', e); }
+    }
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { SBSync.init(); });
+  } else {
+    SBSync.init();
+  }
+})();

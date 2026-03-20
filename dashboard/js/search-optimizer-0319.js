@@ -741,26 +741,45 @@ function clipGeminiContext(s, maxLen) {
   return s.slice(0, max) + '\n\n[…上下文已截断]';
 }
 
-// ── RCA Notes Storage (localStorage) ──
+// ── RCA Notes Storage (localStorage + Supabase) ──
 const RCA_NOTES_KEY = 'rca_diag_notes';
 function loadRCANotes() { try { return JSON.parse(localStorage.getItem(RCA_NOTES_KEY) || '{}'); } catch { return {}; } }
 function saveRCANotes(notes) { localStorage.setItem(RCA_NOTES_KEY, JSON.stringify(notes)); }
 function getRCANotes(aid) { return (loadRCANotes()[aid] || []).sort((a,b) => a.ts - b.ts); }
 function addRCANote(aid, text, role) {
+  const r = role || 'user', ts = Date.now();
   const all = loadRCANotes();
   if (!all[aid]) all[aid] = [];
-  all[aid].push({ text, role: role || 'user', ts: Date.now() });
+  all[aid].push({ text, role: r, ts });
   saveRCANotes(all);
+  if (typeof SBSync !== 'undefined') {
+    SBSync.addNote('rca', aid, text, r, ts).then(sbId => {
+      if (sbId != null) {
+        const a2 = loadRCANotes(), arr = a2[aid] || [];
+        for (let i = arr.length - 1; i >= 0; i--) {
+          if (arr[i].ts === ts && arr[i].text === text && !arr[i]._sbId) { arr[i]._sbId = sbId; break; }
+        }
+        saveRCANotes(a2);
+      }
+    }).catch(() => {});
+  }
 }
 function deleteRCANote(aid, idx) {
   const all = loadRCANotes();
-  if (all[aid]) { all[aid].splice(idx, 1); saveRCANotes(all); }
+  if (!all[aid]) return;
+  const note = all[aid][idx];
+  if (note && note._sbId && typeof SBSync !== 'undefined') SBSync.deleteNote(note._sbId).catch(() => {});
+  all[aid].splice(idx, 1);
+  saveRCANotes(all);
 }
 function deleteLastRCASystemNote(aid) {
   const all = loadRCANotes();
   const notes = all[aid] || [];
   for (let i = notes.length - 1; i >= 0; i--) {
-    if (notes[i].role === 'system') { notes.splice(i, 1); break; }
+    if (notes[i].role === 'system') {
+      if (notes[i]._sbId && typeof SBSync !== 'undefined') SBSync.deleteNote(notes[i]._sbId).catch(() => {});
+      notes.splice(i, 1); break;
+    }
   }
   all[aid] = notes;
   saveRCANotes(all);
@@ -2979,20 +2998,36 @@ function renderNegKWCenter() {
     });
   });
 
-  // ── Notes/Conversation Storage (localStorage) ──
+  // ── Notes/Conversation Storage (localStorage + Supabase) ──
   const NOTES_KEY = 'negkw_diag_notes';
   function loadNotes() { try { return JSON.parse(localStorage.getItem(NOTES_KEY) || '{}'); } catch { return {}; } }
   function saveNotes(notes) { localStorage.setItem(NOTES_KEY, JSON.stringify(notes)); }
   function getNotes(diagId) { return (loadNotes()[diagId] || []).sort((a,b) => a.ts - b.ts); }
   function addNote(diagId, text, role) {
+    const r = role || 'user', ts = Date.now();
     const all = loadNotes();
     if (!all[diagId]) all[diagId] = [];
-    all[diagId].push({ text, role: role || 'user', ts: Date.now() });
+    all[diagId].push({ text, role: r, ts });
     saveNotes(all);
+    if (typeof SBSync !== 'undefined') {
+      SBSync.addNote('negkw', diagId, text, r, ts).then(sbId => {
+        if (sbId != null) {
+          const a2 = loadNotes(), arr = a2[diagId] || [];
+          for (let i = arr.length - 1; i >= 0; i--) {
+            if (arr[i].ts === ts && arr[i].text === text && !arr[i]._sbId) { arr[i]._sbId = sbId; break; }
+          }
+          saveNotes(a2);
+        }
+      }).catch(() => {});
+    }
   }
   function deleteNote(diagId, idx) {
     const all = loadNotes();
-    if (all[diagId]) { all[diagId].splice(idx, 1); saveNotes(all); }
+    if (!all[diagId]) return;
+    const note = all[diagId][idx];
+    if (note && note._sbId && typeof SBSync !== 'undefined') SBSync.deleteNote(note._sbId).catch(() => {});
+    all[diagId].splice(idx, 1);
+    saveNotes(all);
   }
   function diagHasNotes(diagId) { return getNotes(diagId).length > 0; }
 
@@ -3148,7 +3183,10 @@ function renderNegKWCenter() {
     const allNotes = loadNotes();
     const notes = allNotes[diagId] || [];
     for (let i = notes.length - 1; i >= 0; i--) {
-      if (notes[i].role === 'system') { notes.splice(i, 1); break; }
+      if (notes[i].role === 'system') {
+        if (notes[i]._sbId && typeof SBSync !== 'undefined') SBSync.deleteNote(notes[i]._sbId).catch(() => {});
+        notes.splice(i, 1); break;
+      }
     }
     allNotes[diagId] = notes;
     saveNotes(allNotes);
@@ -3603,10 +3641,15 @@ function renderNegKWCenter() {
       localStorage.setItem('gemini_model', model);
       statusEl.textContent = '✅ 已保存！诊断面板的备注框现在支持 AI 分析。';
       statusEl.style.color = '#10b981';
+      if (typeof SBSync !== 'undefined') {
+        SBSync.saveSetting('gemini_api_key', key).catch(() => {});
+        SBSync.saveSetting('gemini_model', model).catch(() => {});
+      }
     } else {
       localStorage.removeItem('gemini_api_key');
       statusEl.textContent = '已清除 API Key，AI 分析已关闭。';
       statusEl.style.color = '#f59e0b';
+      if (typeof SBSync !== 'undefined') SBSync.deleteSetting('gemini_api_key').catch(() => {});
     }
     setTimeout(() => { modal.style.display = 'none'; }, 1500);
   });
@@ -3639,6 +3682,11 @@ function renderNegKWCenter() {
         localStorage.setItem(POSTBACK_LOG_KEY, ta.value);
         statusEl.textContent = '已自动保存 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         statusEl.style.color = '#10b981';
+        if (typeof SBSync !== 'undefined') {
+          SBSync.savePostback(ta.value).then(() => {
+            statusEl.textContent = '☁️ 已同步至云端 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          }).catch(() => {});
+        }
       } catch (e) {
         console.warn('[PostbackLog] save failed', e);
         statusEl.textContent = '保存失败（存储已满或权限）';

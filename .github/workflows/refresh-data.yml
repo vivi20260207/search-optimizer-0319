@@ -1,0 +1,122 @@
+name: Refresh Google Ads Data
+
+on:
+  schedule:
+    # 每天北京时间 10:00（UTC 02:00）跑一次
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    # 支持手动触发
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install google-ads protobuf pyyaml
+
+      - name: Write google-ads.yaml (Web Search accounts)
+        run: |
+          cat > google-ads.yaml << 'YAML'
+          developer_token: ${{ secrets.GADS_DEV_TOKEN }}
+          client_id: ${{ secrets.GADS_CLIENT_ID }}
+          client_secret: ${{ secrets.GADS_CLIENT_SECRET }}
+          refresh_token: ${{ secrets.GADS_REFRESH_TOKEN }}
+          login_customer_id: ${{ secrets.GADS_LOGIN_CID }}
+          use_proto_plus: True
+          YAML
+
+      - name: Write google-ads-app.yaml (App accounts)
+        run: |
+          cat > google-ads-app.yaml << 'YAML'
+          developer_token: ${{ secrets.GADS_APP_DEV_TOKEN }}
+          client_id: ${{ secrets.GADS_APP_CLIENT_ID }}
+          client_secret: ${{ secrets.GADS_APP_CLIENT_SECRET }}
+          refresh_token: ${{ secrets.GADS_APP_REFRESH_TOKEN }}
+          login_customer_id: ${{ secrets.GADS_APP_LOGIN_CID }}
+          use_proto_plus: True
+          YAML
+
+      - name: Write additional MCC configs
+        run: |
+          for secret_name in GADS_MCC_5100780984 GADS_MCC_7534035699 GADS_MCC_3094233805 GADS_MCC_8009156492; do
+            cid=$(echo "$secret_name" | grep -oP '\d+$')
+            yaml_content="${!secret_name:-}"
+            if [ -n "$yaml_content" ]; then
+              echo "$yaml_content" > "google-ads-mcc-${cid}.yaml"
+              echo "Wrote google-ads-mcc-${cid}.yaml"
+            fi
+          done
+        env:
+          GADS_MCC_5100780984: ${{ secrets.GADS_MCC_5100780984 }}
+          GADS_MCC_7534035699: ${{ secrets.GADS_MCC_7534035699 }}
+          GADS_MCC_3094233805: ${{ secrets.GADS_MCC_3094233805 }}
+          GADS_MCC_8009156492: ${{ secrets.GADS_MCC_8009156492 }}
+
+      - name: Fetch daily data (adw_data_daily.js)
+        run: python fetch_adw_data.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+      - name: Fetch change history (adw_data_changelog.js)
+        run: python fetch_change_history.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+      - name: Fetch negative keywords (adw_data_negkw.js)
+        run: python fetch_negative_keywords.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+      - name: Fetch app change history (adw_data_app_changelog.js)
+        run: python fetch_app_change_history.py
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+      - name: Update HTML date
+        run: |
+          TODAY=$(date +%Y-%m-%d)
+          sed -i "s/更新: [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}/更新: $TODAY/g" dashboard/search-optimizer-0319.html
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dashboard/js/adw_data_daily.js \
+                  dashboard/js/adw_data_changelog.js \
+                  dashboard/js/adw_data_negkw.js \
+                  dashboard/js/adw_data_app_changelog.js \
+                  dashboard/search-optimizer-0319.html \
+                  2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "No data changes — skipping commit."
+          else
+            git commit -m "data: 自动刷新数据 $(date +%Y-%m-%d)"
+            git push
+            echo "✅ Pushed — Vercel will auto-deploy"
+          fi
+
+      - name: Cleanup secrets
+        if: always()
+        run: rm -f google-ads*.yaml

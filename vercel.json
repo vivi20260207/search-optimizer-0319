@@ -1,0 +1,27 @@
+{
+  "rewrites": [
+    { "source": "/embed/:path*", "destination": "/landing/embed/:path*" },
+    { "source": "/landing/ft", "destination": "/landing/ft/index.html" },
+    { "source": "/landing/pu", "destination": "/landing/pu/index.html" },
+    { "source": "/landing/ppt", "destination": "/landing/ppt/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/landing/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=300, s-maxage=600" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
+    },
+    {
+      "source": "/embed/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=300, s-maxage=600" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
+    }
+  ]
+}

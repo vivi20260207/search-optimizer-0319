@@ -291,7 +291,10 @@ function aggregateAgeRows(rows) {
 
 function rebuildSearchCampsFromDaily(start, end) {
   SEARCH_CAMPS = CAMPAIGN_SUMMARY.filter(c => c.type === 'Search').map(base => {
-    const daily = (CAMP_DAILY_MAP[base.name] || []).filter(r => rowInDateRange(r, start, end));
+    const rawDaily = CAMP_DAILY_MAP[base.name];
+    if (!rawDaily || !rawDaily.length) return { ...base };
+    const daily = rawDaily.filter(r => rowInDateRange(r, start, end));
+    if (!daily.length) return { ...base, spend: 0, totalRevenue: 0, newPayUsers: 0, roas: 0, newCPA: 0, newIOS: 0, newAndroid: 0 };
     const spend = daily.reduce((s, r) => s + (r.cost || 0), 0);
     const totalRevenue = daily.reduce((s, r) => s + (r.revenue || 0), 0);
     const newPayUsers = Math.round(daily.reduce((s, r) => s + (r.conversions || 0), 0));

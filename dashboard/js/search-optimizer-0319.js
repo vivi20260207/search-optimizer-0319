@@ -114,7 +114,8 @@ regAsset('Ppt-web-US-2.5-Pmax-1.20-homepage', typeof ADW_PPT_US_PMAX_ASSETS !== 
 })();
 
 // ─── 数据包日期元信息 + 全局筛选区间 ───
-const ADW_META = (typeof ADW_DATA_META !== 'undefined') ? ADW_DATA_META : { startDate: '2026-02-01', endDate: '2099-12-31', generatedAt: '' };
+const _hasRealMeta = (typeof ADW_DATA_META !== 'undefined');
+const ADW_META = _hasRealMeta ? ADW_DATA_META : { startDate: '2026-02-01', endDate: '2099-12-31', generatedAt: '' };
 
 function ymdLocal(d) {
   const y = d.getFullYear();
@@ -143,6 +144,9 @@ function rowInDateRange(row, start, end) {
 function computeDefaultDateRange() {
   const ds = ADW_META.startDate;
   const de = ADW_META.endDate;
+  if (!_hasRealMeta) {
+    return { start: ds, end: de };
+  }
   const today = ymdLocal(new Date());
   const yest = addDaysYmd(today, -1);
   let pick = yest;
@@ -163,7 +167,12 @@ function saveDateRange(s, e) {
   localStorage.setItem(DATE_RANGE_KEY, JSON.stringify({ start: s, end: e }));
 }
 
-let DATE_RANGE = loadSavedDateRange() || computeDefaultDateRange();
+let DATE_RANGE = loadSavedDateRange();
+if (!_hasRealMeta && DATE_RANGE) {
+  localStorage.removeItem(DATE_RANGE_KEY);
+  DATE_RANGE = null;
+}
+DATE_RANGE = DATE_RANGE || computeDefaultDateRange();
 DATE_RANGE.start = clampYmd(DATE_RANGE.start, ADW_META.startDate, ADW_META.endDate);
 DATE_RANGE.end = clampYmd(DATE_RANGE.end, ADW_META.startDate, ADW_META.endDate);
 if (DATE_RANGE.start > DATE_RANGE.end) {

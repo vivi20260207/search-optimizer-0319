@@ -3299,24 +3299,6 @@ function refreshAllDashboardRenders() {
   });
 }
 
-function syncSidebarDataLines() {
-  const bundle = document.getElementById('sidebar-bundle-line');
-  const filt = document.getElementById('sidebar-filter-line');
-  const gen = document.getElementById('sidebar-generated-line');
-  if (bundle) {
-    bundle.textContent = `数据包: ${ADW_META.startDate} ~ ${ADW_BUNDLE_END_EFFECTIVE}（全包筛选: 起≤${ADW_META.startDate} 且 止≥${ADW_BUNDLE_END_EFFECTIVE}）`;
-  }
-  if (filt) {
-    filt.textContent = DATE_RANGE.start === DATE_RANGE.end
-      ? `分析区间: 单日 ${DATE_RANGE.start}`
-      : `分析区间: ${DATE_RANGE.start} ~ ${DATE_RANGE.end}`;
-  }
-  if (gen) {
-    const g = ADW_META.generatedAt ? `生成: ${ADW_META.generatedAt}` : '';
-    gen.textContent = [g, '仅 Search 为核心'].filter(Boolean).join(' | ');
-  }
-}
-
 function setGlobalDateRange(start, end, options = {}) {
   const { updateInputs = true } = options;
   const hint = document.getElementById('date-range-hint');
@@ -3338,7 +3320,6 @@ function setGlobalDateRange(start, end, options = {}) {
     }
     rebuildMapsForDateRange(s, e);
     refreshAllDashboardRenders();
-    syncSidebarDataLines();
     if (applyBtn) {
       applyBtn.textContent = '已应用 ✓';
       applyBtn.style.background = 'var(--green, #22c55e)';
@@ -3404,7 +3385,6 @@ function initGlobalDateRangeBar() {
     hint.textContent = '改日期后点「应用」。悬停本行可看数据口径说明。';
     hint.title = `默认「今天」单日（按数据包截断）。快捷：昨天 / 近7天。无 date 的行仅「全包」计入（起≤${ADW_META.startDate} 且 止≥${ADW_BUNDLE_END_EFFECTIVE}）。无 ADW_CAMP_* 的 Spend 为包内汇总。`;
   }
-  syncSidebarDataLines();
   if (_globalDateBarBound) return;
   _globalDateBarBound = true;
   btn.addEventListener('click', () => {

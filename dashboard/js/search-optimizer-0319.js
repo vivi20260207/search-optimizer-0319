@@ -2873,15 +2873,37 @@ function renderNegKWCenter() {
     if (!negByKw[kLower]) negByKw[kLower] = [];
     negByKw[kLower].push(e);
 
-    // Diag: positive-negative conflict
+    // Diag: 同系列内正负互斥 vs 跨系列仅「同词出现在否+正清单」（Google 否定不跨 Campaign 生效）
     if (posKwSet.has(kLower)) {
       const conflicting = FLAT_KW.filter(k => k.keyword && k.keyword.toLowerCase().trim() === kLower);
-      e._diags.push({
-        type: 'conflict',
-        icon: '⚠️',
-        label: '正负冲突',
-        detail: `同时作为正向关键词存在于: ${conflicting.map(k => U.campShortName(k._camp || k.campaign)).join(', ')}`
-      });
+      let sameScope = false;
+      if (e.level === 'Campaign') {
+        sameScope = conflicting.some(k => (k._camp || k.campaign) === e.campaign);
+      } else {
+        const nAg = String(e.adGroup || '').trim();
+        sameScope = conflicting.some(k =>
+          (k._camp || k.campaign) === e.campaign &&
+          String(k.adGroup || '').trim() === nAg
+        );
+      }
+      if (sameScope) {
+        e._diags.push({
+          type: 'conflict',
+          icon: '⚠️',
+          label: '同系列正负冲突',
+          detail: `同一${e.level === 'Campaign' ? 'Campaign' : '广告组'}内同时存在正向词与否定词，否定会阻止该范围内匹配。正向词所在: ${conflicting.filter(k => {
+            if (e.level === 'Campaign') return (k._camp || k.campaign) === e.campaign;
+            return (k._camp || k.campaign) === e.campaign && String(k.adGroup || '').trim() === String(e.adGroup || '').trim();
+          }).map(k => U.campShortName(k._camp || k.campaign)).join(', ')}`
+        });
+      } else {
+        e._diags.push({
+          type: 'portfolio-dup',
+          icon: '💡',
+          label: '跨系列同词',
+          detail: `其它 Campaign 有同名正向词: ${conflicting.map(k => U.campShortName(k._camp || k.campaign)).join(', ')}。否定词仅作用于本${e.level === 'Campaign' ? 'Campaign' : '广告组'}，不会拦截其它系列里的正向词。`
+        });
+      }
     }
 
     // Diag: single-word broad match (overly broad)
@@ -3209,6 +3231,7 @@ function renderNegKWCenter() {
   const campLevel = NEG_KW.filter(e => e.level === 'Campaign').length;
   const agLevel = NEG_KW.filter(e => e.level === '广告组').length;
   const conflictCount = NEG_KW.filter(e => e._diags.some(d => d.type === 'conflict')).length;
+  const portfolioDupCount = NEG_KW.filter(e => e._diags.some(d => d.type === 'portfolio-dup')).length;
   const broadCount = NEG_KW.filter(e => e._diags.some(d => d.type === 'too-broad')).length;
   const dupCount = NEG_KW.filter(e => e._diags.some(d => d.type === 'duplicate')).length;
   const issueCount = conflictCount + broadCount + gapAlerts.length;
@@ -3217,7 +3240,8 @@ function renderNegKWCenter() {
 
   U.html('negkw-kpis', `
     <div class="kpi-card"><div class="kpi-label">否定词总数</div><div class="kpi-value">${NEG_KW.length}</div><div class="kpi-sub">Campaign ${campLevel} + 广告组 ${agLevel}</div></div>
-    <div class="kpi-card"><div class="kpi-label">⚠️ 正负冲突</div><div class="kpi-value ${conflictCount ? 'clr-bad' : 'clr-good'}">${conflictCount}</div><div class="kpi-sub">同时作为正向关键词</div></div>
+    <div class="kpi-card"><div class="kpi-label">⚠️ 同系列冲突</div><div class="kpi-value ${conflictCount ? 'clr-bad' : 'clr-good'}">${conflictCount}</div><div class="kpi-sub">同 Campaign/组内否+正</div></div>
+    <div class="kpi-card"><div class="kpi-label">💡 跨系列同词</div><div class="kpi-value ${portfolioDupCount ? 'clr-warn' : 'clr-good'}">${portfolioDupCount}</div><div class="kpi-sub">资产层提醒，非竞价互斥</div></div>
     <div class="kpi-card"><div class="kpi-label">🕳️ 漏网之鱼</div><div class="kpi-value ${gapAlerts.length ? 'clr-warn' : 'clr-good'}">${gapAlerts.length}</div><div class="kpi-sub">否定了A但B还在花钱</div></div>
     <div class="kpi-card"><div class="kpi-label">💥 匹配过宽</div><div class="kpi-value ${broadCount ? 'clr-warn' : 'clr-good'}">${broadCount}</div><div class="kpi-sub">单词广泛否定</div></div>
     <div class="kpi-card"><div class="kpi-label">🔄 跨组重复</div><div class="kpi-value ${dupCount ? 'clr-warn' : 'clr-good'}">${dupCount}</div><div class="kpi-sub">建议提升至Campaign级</div></div>
@@ -3226,18 +3250,38 @@ function renderNegKWCenter() {
   // ── Diagnostic Cards ──
   let diagHtml = '';
 
-  // Conflict card
+  // 同系列正负冲突
   const conflicts = NEG_KW.filter(e => e._diags.some(d => d.type === 'conflict'));
-  diagHtml += `<div class="card"><div class="card-header"><h3>⚠️ 正负冲突检测 (${conflicts.length})</h3></div><div class="card-body" style="max-height:280px;overflow-y:auto;font-size:13px;">`;
+  diagHtml += `<div class="card"><div class="card-header"><h3>⚠️ 同系列正负冲突 (${conflicts.length})</h3></div><div class="card-body" style="max-height:280px;overflow-y:auto;font-size:13px;">`;
   if (conflicts.length === 0) {
-    diagHtml += '<div class="muted" style="padding:20px;text-align:center;">✅ 未发现正负冲突</div>';
+    diagHtml += '<div class="muted" style="padding:20px;text-align:center;">✅ 未发现同 Campaign/广告组内否+正互斥</div>';
   } else {
     conflicts.forEach((e, i) => {
-      const d = e._diags.find(d => d.type === 'conflict');
+      const d = e._diags.find(x => x.type === 'conflict');
       const did = makeDiagId('conflict', e.keyword, e.campaign);
       const hasN = diagHasNotes(did);
       diagHtml += `<div class="diag-item ${hasN ? 'has-notes' : ''}" style="padding:6px 0;border-bottom:1px solid #f1f5f9;" data-diag-type="conflict" data-diag-idx="${i}">
         <span class="badge badge-bad" style="font-size:10px;">${e.matchType}</span>
+        <strong>${e.keyword}</strong>
+        <span class="muted" style="font-size:11px;"> — 否定于 ${U.campShortName(e.campaign)}</span>
+        <div class="muted" style="font-size:11px;margin-top:2px;">${d.detail}</div>
+      </div>`;
+    });
+  }
+  diagHtml += '</div></div>';
+
+  // 跨系列同词（资产层提醒）
+  const portfolioDups = NEG_KW.filter(e => e._diags.some(d => d.type === 'portfolio-dup'));
+  diagHtml += `<div class="card"><div class="card-header"><h3>💡 跨系列同词 (${portfolioDups.length})</h3><span class="muted" style="font-size:12px;">否定不跨 Campaign 生效，非竞价互斥</span></div><div class="card-body" style="max-height:280px;overflow-y:auto;font-size:13px;">`;
+  if (portfolioDups.length === 0) {
+    diagHtml += '<div class="muted" style="padding:20px;text-align:center;">✅ 无此项</div>';
+  } else {
+    portfolioDups.forEach((e, i) => {
+      const d = e._diags.find(x => x.type === 'portfolio-dup');
+      const did = makeDiagId('portfolio', e.keyword, e.campaign);
+      const hasN = diagHasNotes(did);
+      diagHtml += `<div class="diag-item ${hasN ? 'has-notes' : ''}" style="padding:6px 0;border-bottom:1px solid #f1f5f9;" data-diag-type="portfolio" data-diag-idx="${i}">
+        <span class="badge badge-info" style="font-size:10px;">${e.matchType}</span>
         <strong>${e.keyword}</strong>
         <span class="muted" style="font-size:11px;"> — 否定于 ${U.campShortName(e.campaign)}</span>
         <div class="muted" style="font-size:11px;margin-top:2px;">${d.detail}</div>
@@ -3322,14 +3366,14 @@ function renderNegKWCenter() {
 
       if (type === 'conflict') {
         const e = conflicts[idx]; if (!e) return;
-        const d = e._diags.find(d => d.type === 'conflict');
+        const d = e._diags.find(x => x.type === 'conflict');
         diagId = makeDiagId('conflict', e.keyword, e.campaign);
-        title = `⚠️ 正负冲突: ${e.keyword}`;
+        title = `⚠️ 同系列正负冲突: ${e.keyword}`;
         const posMatches = FLAT_KW.filter(k => k.keyword && k.keyword.toLowerCase().trim() === e.keyword.toLowerCase().trim());
         detail = `<p><strong>否定词:</strong> "${e.keyword}" [${e.matchType}]</p>
           <p><strong>否定所在:</strong> ${e.campaign}${e.adGroup ? ' / ' + e.adGroup : ''} (${e.level}级)</p>
-          <p><strong>冲突说明:</strong> ${d.detail}</p>
-          <p style="color:var(--red);font-weight:600;">此词同时作为正向关键词和否定词存在，Google 会优先使用否定词，导致正向关键词无法展现。</p>`;
+          <p><strong>说明:</strong> ${d.detail}</p>
+          <p style="color:var(--red);font-weight:600;">在同一 Campaign/广告组范围内，否定会覆盖正向匹配，需删掉一侧或调整范围。</p>`;
         if (posMatches.length > 0) {
           extraHtml = '<div class="drawer-section-title">📊 正向关键词详情</div>';
           posMatches.forEach(k => {
@@ -3338,6 +3382,27 @@ function renderNegKWCenter() {
               <span class="muted">Campaign: ${U.campShortName(k._camp || k.campaign)}</span>
               ${k.cost ? ` | 花费: $${U.fmt(k.cost)}` : ''}
               ${k.conversions ? ` | 转化: ${k.conversions}` : ''}
+            </div>`;
+          });
+        }
+        extraHtml += buildAffectedSTHtml(e.keyword, e.campaign, e.matchType);
+      } else if (type === 'portfolio') {
+        const e = portfolioDups[idx]; if (!e) return;
+        const d = e._diags.find(x => x.type === 'portfolio-dup');
+        diagId = makeDiagId('portfolio', e.keyword, e.campaign);
+        title = `💡 跨系列同词: ${e.keyword}`;
+        const posMatches = FLAT_KW.filter(k => k.keyword && k.keyword.toLowerCase().trim() === e.keyword.toLowerCase().trim());
+        detail = `<p><strong>否定词:</strong> "${e.keyword}" [${e.matchType}]</p>
+          <p><strong>否定所在:</strong> ${e.campaign}${e.adGroup ? ' / ' + e.adGroup : ''} (${e.level}级)</p>
+          <p><strong>说明:</strong> ${d.detail}</p>
+          <p style="color:var(--blue);font-weight:600;">Google 否定词仅作用于其所在的 Campaign/广告组，不会拦截其它 Campaign 里的正向词。本条为资产清单提醒，不是「跨系列抢量」或竞价内互斥。</p>`;
+        if (posMatches.length > 0) {
+          extraHtml = '<div class="drawer-section-title">📊 其它系列正向词（供对照）</div>';
+          posMatches.forEach(k => {
+            extraHtml += `<div style="padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12px;">
+              <strong>${k.keyword}</strong> [${k.matchType || ''}]<br>
+              <span class="muted">Campaign: ${U.campShortName(k._camp || k.campaign)}</span>
+              ${k.cost ? ` | 花费: $${U.fmt(k.cost)}` : ''}
             </div>`;
           });
         }
@@ -3434,7 +3499,7 @@ function renderNegKWCenter() {
   const diagBadge = e => {
     if (e._diags.length === 0) return '<span class="badge badge-good" style="font-size:10px;">✅</span>';
     return e._diags.map(d => {
-      const cls = d.type === 'conflict' ? 'badge-bad' : d.type === 'too-broad' ? 'badge-warn' : 'badge-neutral';
+      const cls = d.type === 'conflict' ? 'badge-bad' : d.type === 'portfolio-dup' ? 'badge-info' : d.type === 'too-broad' ? 'badge-warn' : 'badge-neutral';
       return `<span class="badge ${cls}" style="font-size:10px;" title="${d.detail}">${d.icon}</span>`;
     }).join(' ');
   };

@@ -442,22 +442,51 @@ const LP_VERSION_DATA = {
 };
 
 // ============================================================
-// [MOCK] A/B 测试数据
+// A/B 测试数据 — 优先从 Supabase 读取，失败回退到 Mock
 // ============================================================
+const AB_TESTABLE_ELEMENTS = [
+  { id: 'H1', name: '主标题', type: 'text' },
+  { id: 'H2', name: '副标题', type: 'text' },
+  { id: 'CTA_TEXT', name: 'CTA按钮文案', type: 'text' },
+  { id: 'CTA_COLOR', name: 'CTA按钮颜色', type: 'color' },
+  { id: 'HERO', name: '首屏主视觉', type: 'media' },
+  { id: 'TRUST', name: '信任标识', type: 'component' },
+  { id: 'SOCIAL_PROOF', name: '社会证明', type: 'component' },
+  { id: 'LAYOUT', name: '页面布局', type: 'template' },
+];
+
 const AB_TEST_DATA = {
   _isMock: true,
-  testableElements: [
-    { id: 'H1', name: '主标题', type: 'text' },
-    { id: 'H2', name: '副标题', type: 'text' },
-    { id: 'CTA_TEXT', name: 'CTA按钮文案', type: 'text' },
-    { id: 'CTA_COLOR', name: 'CTA按钮颜色', type: 'color' },
-    { id: 'HERO', name: '首屏主视觉', type: 'media' },
-    { id: 'TRUST', name: '信任标识', type: 'component' },
-    { id: 'SOCIAL_PROOF', name: '社会证明', type: 'component' },
-    { id: 'LAYOUT', name: '页面布局', type: 'template' },
-  ],
+  testableElements: AB_TESTABLE_ELEMENTS,
+  tests: [],
 
-  tests: [
+  async loadFromSupabase() {
+    if (typeof SBSync === 'undefined' || !SBSync.ready) {
+      console.log('[AB] SBSync not ready, using mock data');
+      return false;
+    }
+    try {
+      var tests = await SBSync.getABTests();
+      if (tests && tests.length >= 0) {
+        this.tests = tests;
+        this._isMock = false;
+        console.log('[AB] Loaded ' + tests.length + ' tests from Supabase');
+        return true;
+      }
+    } catch (e) {
+      console.warn('[AB] Failed to load from Supabase, using mock', e);
+    }
+    return false;
+  },
+
+  loadMockFallback() {
+    if (!this._isMock) return;
+    this.tests = AB_MOCK_TESTS;
+    console.log('[AB] Loaded ' + this.tests.length + ' mock tests as fallback');
+  }
+};
+
+const AB_MOCK_TESTS = [
     {
       testId: 'ab-001',
       name: 'CTA文案 & 颜色优化',
@@ -632,15 +661,14 @@ const AB_TEST_DATA = {
         canPromote: false
       }
     }
-  ]
-};
+];
 
 // ============================================================
 // [MOCK] 异常检测数据
 // ============================================================
 const MOCK_ALERTS = [
   { date: "2026-03-17", campaign: "Ft-web-US-2.5-Display-12.26-homepage", type: "ROAS骤降", severity: "high", message: "ROAS 从前日 0.45 降至 0.22，为 45 天最低值", metric: "roas", value: 0.22, threshold: 0.5 },
-  { date: "2026-03-16", campaign: "Pu-web-2.5-IN-Display-12.23", type: "CPA异常", severity: "high", message: "新用户 CPA 升至 32.5，超出目标 CPA(105) 的预警线", metric: "cpa", value: 32.5, threshold: 30 },
+  { date: "2026-03-16", campaign: "Pu-web-2.5-IN-Display-12.23", type: "CPA异常", severity: "high", message: "新用户 CPA 升至 32.5，超出预警阈值(30)，日花费效率下降", metric: "cpa", value: 32.5, threshold: 30 },
   { date: "2026-03-15", campaign: "Ppt-web-UK-2.5-竞品词-2.2-homepage", type: "花费激增", severity: "medium", message: "日花费 68.2 较 7 日均值(42.1) 上升 62%", metric: "spend", value: 68.2, threshold: 50 },
   { date: "2026-03-14", campaign: "Ft-web-US-2.5-Display-12.26-homepage", type: "ROAS回升", severity: "low", message: "ROAS 回升至 1.48，为近 7 日最高", metric: "roas", value: 1.48, threshold: 1.0 },
   { date: "2026-03-13", campaign: "pu-web-IN-2.5-品牌词-6.16", type: "付费率下降", severity: "medium", message: "iOS 付费率从 7.2% 降至 4.8%", metric: "iosPayRate", value: 4.8, threshold: 5.0 },

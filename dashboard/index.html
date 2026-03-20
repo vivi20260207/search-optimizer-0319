@@ -87,7 +87,7 @@
 
       <div class="card table-card">
         <div class="card-header">
-          <h3>Campaign 明细（按 ROAS 排序）</h3>
+          <h3>Campaign 明细（按花费排序）</h3>
           <div class="data-source-tag real">BI 真实数据</div>
         </div>
         <div class="table-wrapper">
@@ -631,7 +631,10 @@
                 <option value="Ft">Ft (Fachat)</option>
               </select>
             </div>
-            <button class="ab-create-btn" id="ab-create-btn">+ 新建测试</button>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span id="ab-data-source" style="font-size:11px;padding:3px 8px;border-radius:4px;background:var(--bg-hover);color:var(--text-muted);"></span>
+              <button class="ab-create-btn" id="ab-create-btn">+ 新建测试</button>
+            </div>
           </div>
           <div class="kpi-cards" id="ab-list-kpis"></div>
           <div class="lp-page-grid" id="ab-test-grid"></div>
@@ -920,6 +923,8 @@
     <div class="drawer-body" id="drawer-body"></div>
   </aside>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="js/supabase-sync.js"></script>
   <script src="js/data.js"></script>
   <script src="js/adw_data.js"></script>
   <script src="js/app.js"></script>

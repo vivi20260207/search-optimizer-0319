@@ -426,6 +426,318 @@
           created_at: new Date().toISOString()
         }, { onConflict: 'snapshot_date,data_type' });
       } catch (e) { console.warn('[SB] saveSnap err', e); }
+    },
+
+    // ── AB Tests ──
+
+    _abCache: null,
+    _abCacheTime: 0,
+
+    clearABCache() {
+      this._abCache = null;
+      this._abCacheTime = 0;
+    },
+
+    async getABTests(forceRefresh) {
+      if (!sb()) return null;
+      var now = Date.now();
+      if (!forceRefresh && this._abCache && now - this._abCacheTime < 60000) {
+        return this._abCache;
+      }
+      try {
+        var res = await sb().from('ab_tests')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (res.error) throw res.error;
+
+        var tests = res.data || [];
+
+        var resultsRes = await sb().from('ab_results').select('*');
+        if (resultsRes.error) throw resultsRes.error;
+        var allResults = resultsRes.data || [];
+
+        var resultsByTest = {};
+        allResults.forEach(function(r) {
+          if (!resultsByTest[r.test_id]) resultsByTest[r.test_id] = [];
+          resultsByTest[r.test_id].push(r);
+        });
+
+        var formatted = tests.map(function(t) {
+          return SBSync._formatABTest(t, resultsByTest[t.id] || []);
+        });
+
+        this._abCache = formatted;
+        this._abCacheTime = now;
+        return formatted;
+      } catch (e) {
+        console.warn('[SB] getABTests err', e);
+        return null;
+      }
+    },
+
+    _formatABTest: function(t, results) {
+      var meta = {};
+      try { meta = t.notes ? JSON.parse(t.notes) : {}; } catch(e) {}
+
+      var variants = t.variants || [];
+      var trafficSplit = variants.map(function(v) { return v.weight || Math.floor(100 / (variants.length || 1)); });
+
+      var startDate = t.started_at ? t.started_at.split('T')[0] : null;
+      var endDate = t.completed_at ? t.completed_at.split('T')[0] : null;
+      var daysRunning = 0;
+      if (startDate) {
+        var end = endDate ? new Date(endDate) : new Date();
+        daysRunning = Math.max(0, Math.round((end - new Date(startDate)) / 86400000));
+      }
+
+      var resultMap = {};
+      results.forEach(function(r) { resultMap[r.variant_id] = r; });
+
+      var formattedVariants = variants.map(function(v) {
+        var r = resultMap[v.id];
+        var metrics = null;
+        if (r && r.visitors > 0) {
+          var uniqueV = r.unique_visitors || r.visitors;
+          metrics = {
+            visitors: r.visitors,
+            clicks: r.cta_clicks || 0,
+            bounceRate: uniqueV > 0 ? +(r.bounce_count / uniqueV * 100).toFixed(1) : 0,
+            avgDuration: +r.avg_time_sec || 0,
+            registerRate: uniqueV > 0 ? +(r.register_count / uniqueV * 100).toFixed(1) : 0,
+            payRate: uniqueV > 0 ? +(r.pay_count / uniqueV * 100).toFixed(1) : 0,
+            conversions: r.pay_count || 0,
+            revenue: +r.revenue || 0,
+            cost: +r.cost || 0,
+            cpa: r.pay_count > 0 ? +((+r.cost || 0) / r.pay_count).toFixed(1) : 0,
+            roas: (+r.cost || 0) > 0 ? +((+r.revenue || 0) / (+r.cost || 1)).toFixed(2) : 0
+          };
+        }
+        return {
+          id: v.id,
+          name: v.name || v.id,
+          isControl: !!v.isControl,
+          elements: v.elements || {},
+          metrics: metrics,
+          dailyData: []
+        };
+      });
+
+      var resultObj = SBSync._computeABResult(formattedVariants, t);
+
+      return {
+        testId: t.id,
+        name: t.name,
+        product: t.product,
+        domain: meta.domain || '',
+        pagePath: meta.pagePath || '',
+        pageVersionId: meta.pageVersionId || '--',
+        status: t.status,
+        startDate: startDate,
+        endDate: endDate,
+        daysRunning: daysRunning,
+        trafficSplit: trafficSplit,
+        targetMetric: t.primary_metric || 'registerRate',
+        secondaryMetrics: meta.secondaryMetrics || [],
+        minSampleSize: t.min_sample_size || 1000,
+        confidenceTarget: meta.confidenceTarget || 95,
+        variants: formattedVariants,
+        result: resultObj
+      };
+    },
+
+    _computeABResult: function(variants, test) {
+      var control = variants.find(function(v) { return v.isControl; });
+      if (!control || !control.metrics) {
+        return { currentWinner: test.winner_variant || null, confidence: 0, improvement: {},
+          recommendation: test.status === 'draft' ? '草稿状态，测试尚未启动。' : '等待数据积累…',
+          canPromote: false };
+      }
+
+      var best = null;
+      var bestScore = -Infinity;
+      var targetKey = test.primary_metric || 'registerRate';
+      var keyMap = { 'register_rate': 'registerRate', 'pay_rate': 'payRate', 'bounce_rate': 'bounceRate', 'cta_click_rate': 'clicks' };
+      var mappedKey = keyMap[targetKey] || targetKey;
+      var lowerBetter = (mappedKey === 'bounceRate' || mappedKey === 'cpa');
+
+      variants.forEach(function(v) {
+        if (v.isControl || !v.metrics) return;
+        var val = v.metrics[mappedKey];
+        var cv = control.metrics[mappedKey];
+        if (val == null || cv == null) return;
+        var score = lowerBetter ? cv - val : val - cv;
+        if (score > bestScore) { bestScore = score; best = v; }
+      });
+
+      var confidence = 0;
+      var improvement = {};
+      if (best && best.metrics && control.metrics) {
+        var cv = control.metrics;
+        var bv = best.metrics;
+        var totalVisitors = variants.reduce(function(s, v) { return s + (v.metrics ? v.metrics.visitors : 0); }, 0);
+        confidence = SBSync._approxConfidence(cv, bv, mappedKey, lowerBetter);
+
+        ['registerRate', 'payRate', 'bounceRate', 'cpa', 'roas', 'avgDuration'].forEach(function(k) {
+          if (cv[k] && bv[k] && cv[k] !== 0) {
+            var pct = ((bv[k] - cv[k]) / Math.abs(cv[k]) * 100).toFixed(1);
+            improvement[k] = (pct > 0 ? '+' : '') + pct + '%';
+          }
+        });
+      }
+
+      var canPromote = confidence >= (test.min_sample_size ? 95 : 95) && best != null && test.status === 'completed';
+      if (test.winner_variant) canPromote = false;
+
+      var recommendation = '';
+      if (test.status === 'draft') {
+        recommendation = '草稿状态，测试尚未启动。';
+      } else if (!best) {
+        recommendation = '暂无胜出变体，等待更多数据。';
+      } else if (confidence >= 95) {
+        recommendation = '变体「' + best.name + '」显著优于对照组，置信度 ' + confidence + '%。建议推广为正式版本。';
+        canPromote = test.status === 'completed' && !test.winner_variant;
+      } else if (confidence >= 80) {
+        recommendation = '变体「' + best.name + '」领先，置信度 ' + confidence + '%，距 95% 目标差 ' + (95 - confidence).toFixed(1) + '%。继续运行 3-5 天。';
+      } else {
+        recommendation = '数据仍在积累中，当前置信度 ' + confidence + '%，需更多样本。';
+      }
+
+      return {
+        currentWinner: best ? best.id : null,
+        confidence: confidence,
+        improvement: improvement,
+        recommendation: recommendation,
+        canPromote: canPromote,
+        promotedAsVersion: test.winner_variant ? 'promoted' : null
+      };
+    },
+
+    _approxConfidence: function(cv, bv, key, lowerBetter) {
+      if (!cv.visitors || !bv.visitors) return 0;
+      var p1 = (cv[key] || 0) / 100;
+      var p2 = (bv[key] || 0) / 100;
+      if (key === 'visitors' || key === 'clicks' || key === 'conversions' || key === 'revenue' || key === 'cost') {
+        p1 = cv[key] / (cv.visitors || 1);
+        p2 = bv[key] / (bv.visitors || 1);
+      }
+      var n1 = cv.visitors;
+      var n2 = bv.visitors;
+      if (n1 < 10 || n2 < 10) return 0;
+      var se = Math.sqrt(p1 * (1 - p1) / n1 + p2 * (1 - p2) / n2);
+      if (se === 0) return 0;
+      var z = Math.abs(p2 - p1) / se;
+      // Approximate two-tailed p → confidence via z-score lookup
+      var conf;
+      if (z >= 3.29) conf = 99.9;
+      else if (z >= 2.58) conf = 99.0;
+      else if (z >= 2.33) conf = 98.0;
+      else if (z >= 1.96) conf = 95.0;
+      else if (z >= 1.65) conf = 90.0;
+      else if (z >= 1.28) conf = 80.0;
+      else if (z >= 1.04) conf = 70.0;
+      else if (z >= 0.84) conf = 60.0;
+      else if (z >= 0.67) conf = 50.0;
+      else conf = +(z / 0.67 * 50).toFixed(1);
+      return +conf.toFixed(1);
+    },
+
+    async getABDailyData(testId) {
+      if (!sb()) return [];
+      try {
+        var res = await sb().from('ab_events')
+          .select('variant_id, event_type, created_at, visitor_id')
+          .eq('test_id', testId)
+          .order('created_at', { ascending: true });
+        if (res.error) throw res.error;
+        var events = res.data || [];
+        if (!events.length) return [];
+
+        var dayVariant = {};
+        events.forEach(function(ev) {
+          var day = ev.created_at.split('T')[0];
+          var key = day + '|' + ev.variant_id;
+          if (!dayVariant[key]) dayVariant[key] = { date: day, variant_id: ev.variant_id, visitors: 0, cta_clicks: 0, _vids: {} };
+          var dv = dayVariant[key];
+          if (ev.event_type === 'page_view') {
+            dv.visitors++;
+            dv._vids[ev.visitor_id] = 1;
+          }
+          if (ev.event_type === 'cta_click') dv.cta_clicks++;
+        });
+
+        return Object.values(dayVariant).map(function(dv) {
+          var uv = Object.keys(dv._vids).length || dv.visitors;
+          return { date: dv.date, variant_id: dv.variant_id, visitors: uv };
+        });
+      } catch (e) { console.warn('[SB] getABDaily err', e); return []; }
+    },
+
+    async createABTest(testData) {
+      if (!sb()) return null;
+      try {
+        var meta = {
+          domain: testData.domain || '',
+          pagePath: testData.pagePath || '',
+          pageVersionId: testData.pageVersionId || '--',
+          secondaryMetrics: testData.secondaryMetrics || [],
+          confidenceTarget: testData.confidenceTarget || 95
+        };
+
+        var variants = testData.variants.map(function(v, i) {
+          return {
+            id: v.id,
+            name: v.name,
+            isControl: !!v.isControl,
+            weight: testData.trafficSplit ? testData.trafficSplit[i] : Math.floor(100 / testData.variants.length),
+            elements: v.elements || {},
+            config_path: v.config_path || null
+          };
+        });
+
+        var row = {
+          name: testData.name,
+          product: testData.product,
+          market: testData.market || 'ALL',
+          status: testData.status || 'draft',
+          traffic_percent: 100,
+          variants: variants,
+          min_sample_size: testData.minSampleSize || 1000,
+          primary_metric: testData.targetMetric || 'register_rate',
+          notes: JSON.stringify(meta)
+        };
+        if (testData.status === 'running') row.started_at = new Date().toISOString();
+
+        var res = await sb().from('ab_tests').insert(row).select('id').single();
+        if (res.error) throw res.error;
+        this.clearABCache();
+        return res.data ? res.data.id : null;
+      } catch (e) { console.warn('[SB] createAB err', e); return null; }
+    },
+
+    async updateABTest(testId, updates) {
+      if (!sb() || !testId) return;
+      try {
+        var row = {};
+        if (updates.name !== undefined) row.name = updates.name;
+        if (updates.status !== undefined) {
+          row.status = updates.status;
+          if (updates.status === 'running' && !updates.skipStartTime) row.started_at = new Date().toISOString();
+          if (updates.status === 'completed') row.completed_at = new Date().toISOString();
+        }
+        if (updates.winner_variant !== undefined) row.winner_variant = updates.winner_variant;
+        if (updates.variants !== undefined) row.variants = updates.variants;
+        if (updates.notes !== undefined) row.notes = typeof updates.notes === 'string' ? updates.notes : JSON.stringify(updates.notes);
+
+        await sb().from('ab_tests').update(row).eq('id', testId);
+        this.clearABCache();
+      } catch (e) { console.warn('[SB] updateAB err', e); }
+    },
+
+    async refreshABResults(testId) {
+      if (!sb() || !testId) return;
+      try {
+        await sb().rpc('refresh_ab_results', { p_test_id: testId });
+      } catch (e) { console.warn('[SB] refreshABResults err', e); }
     }
   };
 

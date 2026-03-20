@@ -46,6 +46,14 @@ const AI = {
     }
     if (!hasCost && k.purchaseNew > 0 && isBroad) return '<span class="action-tag tag-exact">💎 高转化-建议精确</span>';
     if (hasCost && k.cost > 1000 && k.purchaseNew === 0) return '<span class="action-tag tag-pause">🔴 建议暂停</span>';
+    if (k.purchaseNew >= 5 && qs > 0 && qs < 6) {
+      const reasons = [];
+      if (k.landingPageExp && k.landingPageExp.includes('低于')) reasons.push('着陆页');
+      if (k.adRelevance && k.adRelevance.includes('低于')) reasons.push('广告相关性');
+      if (k.expectedCTR && k.expectedCTR.includes('低于')) reasons.push('CTR');
+      return `<span class="action-tag tag-keep">✅ 高转化</span> <span class="action-tag tag-improve">🟡 提升${reasons.length ? reasons.join('+') : 'QS'}</span>`;
+    }
+    if (k.purchaseNew >= 5) return '<span class="action-tag tag-keep">✅ 高转化</span>';
     if (qs > 0 && qs < 6) {
       const reasons = [];
       if (k.landingPageExp && k.landingPageExp.includes('低于')) reasons.push('着陆页');
@@ -54,7 +62,6 @@ const AI = {
       return `<span class="action-tag tag-improve">🟡 提升${reasons.length ? reasons.join('+') : 'QS'}</span>`;
     }
     if (qs >= 8) return '<span class="action-tag tag-good">✅ 质量优秀</span>';
-    if (k.purchaseNew >= 5) return '<span class="action-tag tag-keep">✅ 高转化</span>';
     if (k.purchaseNew > 0) return '<span class="action-tag tag-watch">🟡 观察</span>';
     return '';
   },
@@ -71,7 +78,6 @@ const AI = {
   // --- Devices ---
   deviceTag(d) {
     if (d.cost === 0) return '';
-    const convRate = parseFloat(d.convRate);
     if (d.conversions > 0 && d.cpa < 100) return '<span class="action-tag tag-boost">🚀 高效-提价</span>';
     if (d.conversions > 0) return '<span class="action-tag tag-keep">✅ 有转化</span>';
     if (d.cost > 100) return '<span class="action-tag tag-pause">🔴 无转化-降价</span>';
@@ -1112,10 +1118,10 @@ function renderDailyTrend() {
   }
 
   const validDays = dailyData.filter(d => d.spend > 0);
-  const avgSpend = validDays.reduce((s, d) => s + d.spend, 0) / validDays.length;
-  const avgRoas = validDays.filter(d => d.roas).reduce((s, d) => s + d.roas, 0) / validDays.filter(d => d.roas).length;
   const totalSpend = validDays.reduce((s, d) => s + d.spend, 0);
   const totalRev = validDays.reduce((s, d) => s + d.totalRev, 0);
+  const avgSpend = validDays.length > 0 ? totalSpend / validDays.length : 0;
+  const avgRoas = totalSpend > 0 ? totalRev / totalSpend : 0;
 
   document.getElementById('daily-kpis').innerHTML = `
     <div class="kpi-card">
@@ -1863,12 +1869,12 @@ function renderSchedule() {
   });
 
   const avgCPA = totalConv > 0 ? (totalCost / totalConv).toFixed(2) : '-';
-  const avgCTR = totalClicks > 0 ? ((totalConv / totalClicks) * 100).toFixed(2) + '%' : '-';
+  const convRate = totalClicks > 0 ? ((totalConv / totalClicks) * 100).toFixed(2) + '%' : '-';
   document.getElementById('schedule-kpis').innerHTML = `
     <div class="kpi-card"><div class="kpi-label">总花费 (HKD)</div><div class="kpi-value">${fmt(totalCost)}</div></div>
     <div class="kpi-card"><div class="kpi-label">总转化</div><div class="kpi-value">${fmt(totalConv)}</div></div>
     <div class="kpi-card"><div class="kpi-label">均 CPA</div><div class="kpi-value">${avgCPA}</div></div>
-    <div class="kpi-card"><div class="kpi-label">转化率</div><div class="kpi-value">${avgCTR}</div></div>
+    <div class="kpi-card"><div class="kpi-label">转化率</div><div class="kpi-value">${convRate}</div></div>
   `;
 
   // Build heatmap table
@@ -1983,7 +1989,7 @@ document.querySelectorAll('.lp-tab').forEach(tab => {
     if (tab.dataset.lpView === 'global') renderLPGlobal();
     if (tab.dataset.lpView === 'matrix') renderLPMatrix();
     if (tab.dataset.lpView === 'detail') renderLPDetail();
-    if (tab.dataset.lpView === 'abtest') { document.getElementById('ab-list-view').style.display = ''; document.getElementById('ab-detail-view').style.display = 'none'; renderABTests(); }
+    if (tab.dataset.lpView === 'abtest') { document.getElementById('ab-list-view').style.display = ''; document.getElementById('ab-detail-view').style.display = 'none'; loadAndRenderABTests(); }
   });
 });
 
@@ -2513,6 +2519,43 @@ let abCurrentTest = null;
 
 document.getElementById('ab-filter-status').addEventListener('change', renderABTests);
 document.getElementById('ab-filter-product').addEventListener('change', renderABTests);
+
+let _abDataLoaded = false;
+
+async function _waitForSBSync(timeoutMs) {
+  if (typeof SBSync === 'undefined') return false;
+  if (SBSync.ready) return true;
+  var start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    await new Promise(function(r) { setTimeout(r, 200); });
+    if (SBSync.ready) return true;
+  }
+  return false;
+}
+
+async function loadAndRenderABTests(forceRefresh) {
+  const grid = document.getElementById('ab-test-grid');
+  if (!_abDataLoaded) {
+    grid.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">加载数据中…</div>';
+  }
+
+  if (forceRefresh && typeof SBSync !== 'undefined') SBSync.clearABCache();
+
+  await _waitForSBSync(3000);
+
+  try {
+    var loaded = await AB_TEST_DATA.loadFromSupabase();
+    if (!loaded && AB_TEST_DATA.tests.length === 0) {
+      AB_TEST_DATA.loadMockFallback();
+    }
+    _abDataLoaded = true;
+  } catch (e) {
+    if (AB_TEST_DATA.tests.length === 0) AB_TEST_DATA.loadMockFallback();
+    _abDataLoaded = true;
+  }
+
+  renderABTests();
+}
 document.getElementById('ab-back-btn').addEventListener('click', () => {
   document.getElementById('ab-list-view').style.display = '';
   document.getElementById('ab-detail-view').style.display = 'none';
@@ -2521,6 +2564,19 @@ document.getElementById('ab-back-btn').addEventListener('click', () => {
 function renderABTests() {
   const statusFilter = document.getElementById('ab-filter-status').value;
   const prodFilter = document.getElementById('ab-filter-product').value;
+
+  const srcEl = document.getElementById('ab-data-source');
+  if (srcEl) {
+    if (AB_TEST_DATA._isMock) {
+      srcEl.textContent = '⚠ Mock 数据';
+      srcEl.style.background = 'rgba(217,119,6,0.15)';
+      srcEl.style.color = 'var(--yellow)';
+    } else {
+      srcEl.textContent = '☁ Supabase 实时';
+      srcEl.style.background = 'rgba(16,185,129,0.15)';
+      srcEl.style.color = 'var(--green)';
+    }
+  }
 
   let tests = AB_TEST_DATA.tests;
   if (statusFilter !== 'all') tests = tests.filter(t => t.status === statusFilter);
@@ -2635,9 +2691,22 @@ function openABDetail(testIdx) {
   renderABDetail();
 }
 
-function renderABDetail() {
+async function renderABDetail() {
   if (abCurrentTest === null) return;
   const t = AB_TEST_DATA.tests[abCurrentTest];
+
+  if (!AB_TEST_DATA._isMock && t.testId && t.testId.length > 10 && typeof SBSync !== 'undefined' && SBSync.ready) {
+    try {
+      const daily = await SBSync.getABDailyData(t.testId);
+      if (daily && daily.length) {
+        t.variants.forEach(function(v) {
+          v.dailyData = daily
+            .filter(function(d) { return d.variant_id === v.id; })
+            .map(function(d) { return { date: d.date.slice(5), visitors: d.visitors }; });
+        });
+      }
+    } catch (e) { /* daily data optional */ }
+  }
   const winner = t.result.currentWinner ? t.variants.find(v => v.id === t.result.currentWinner) : null;
   const control = t.variants.find(v => v.isControl);
   const statusLabel = { running: '运行中', completed: '已完成', draft: '草稿', paused: '已暂停' }[t.status];
@@ -2807,11 +2876,15 @@ function renderABDailyChart(t) {
   const hasData = t.variants.some(v => v.dailyData && v.dailyData.length > 0);
   if (!hasData) return;
 
-  const labels = t.variants[0].dailyData.map(d => d.date);
-  const metric = t.targetMetric;
+  const refVariant = t.variants.find(v => v.dailyData && v.dailyData.length > 0);
+  const labels = refVariant.dailyData.map(d => d.date);
+  let metric = t.targetMetric;
+  const sampleDay = refVariant.dailyData[0];
+  if (sampleDay && sampleDay[metric] === undefined) metric = 'visitors';
+
   const datasets = t.variants.map((v, i) => ({
     label: v.name,
-    data: v.dailyData.map(d => d[metric]),
+    data: (v.dailyData || []).map(d => d[metric]),
     borderColor: AB_COLORS[i],
     backgroundColor: AB_COLORS[i] + '20',
     pointRadius: 4,
@@ -2842,7 +2915,7 @@ function renderABDailyChart(t) {
   );
 }
 
-function promoteABWinner(testIdx) {
+async function promoteABWinner(testIdx) {
   const t = AB_TEST_DATA.tests[testIdx];
   const winner = t.variants.find(v => v.id === t.result.currentWinner);
   if (!winner) return;
@@ -2871,6 +2944,14 @@ function promoteABWinner(testIdx) {
   page.healthStatus = 'ok';
   t.result.canPromote = false;
   t.result.promotedAsVersion = newVerNum;
+
+  if (typeof SBSync !== 'undefined' && SBSync.ready && t.testId && t.testId.length > 10) {
+    await SBSync.updateABTest(t.testId, {
+      status: 'completed',
+      winner_variant: winner.id,
+      skipStartTime: true
+    });
+  }
 
   renderABDetail();
 
@@ -2912,7 +2993,7 @@ const abForm = {
   close() {
     document.getElementById('ab-create-view').style.display = 'none';
     document.getElementById('ab-list-view').style.display = '';
-    renderABTests();
+    loadAndRenderABTests(true);
   },
 
   reset() {
@@ -3153,7 +3234,7 @@ function abFormNext(step) {
   abForm.goToStep(step);
 }
 
-function abSaveTest(status) {
+async function abSaveTest(status) {
   const name = document.getElementById('abc-name').value.trim();
   const prod = document.getElementById('abc-product').value;
   const pageSel = document.getElementById('abc-page');
@@ -3168,6 +3249,39 @@ function abSaveTest(status) {
 
   const splits = abForm.variants._splits || abForm.variants.map(() => Math.floor(100 / abForm.variants.length));
   const today = new Date().toISOString().split('T')[0];
+  const targetMetric = document.getElementById('abc-target-metric').value;
+  const minSampleSize = +document.getElementById('abc-min-sample').value || 1000;
+  const confidenceTarget = +document.getElementById('abc-confidence').value || 95;
+
+  const testData = {
+    name,
+    product: prod,
+    domain,
+    pagePath,
+    pageVersionId: activeVer ? activeVer.versionId : '--',
+    status,
+    market: 'ALL',
+    trafficSplit: splits.slice(0, abForm.variants.length),
+    targetMetric,
+    secondaryMetrics: [],
+    minSampleSize,
+    confidenceTarget,
+    variants: abForm.variants.map(v => ({
+      id: v.id,
+      name: v.name,
+      isControl: v.isControl,
+      elements: { ...v.elements }
+    }))
+  };
+
+  if (typeof SBSync !== 'undefined' && SBSync.ready) {
+    const newId = await SBSync.createABTest(testData);
+    if (newId) {
+      console.log('[AB] Test created in Supabase:', newId);
+      abForm.close();
+      return;
+    }
+  }
 
   const newTest = {
     testId: 'ab-' + String(AB_TEST_DATA.tests.length + 1).padStart(3, '0'),
@@ -3181,10 +3295,10 @@ function abSaveTest(status) {
     endDate: null,
     daysRunning: 0,
     trafficSplit: splits.slice(0, abForm.variants.length),
-    targetMetric: document.getElementById('abc-target-metric').value,
+    targetMetric,
     secondaryMetrics: [],
-    minSampleSize: +document.getElementById('abc-min-sample').value || 1000,
-    confidenceTarget: +document.getElementById('abc-confidence').value || 95,
+    minSampleSize,
+    confidenceTarget,
     variants: abForm.variants.map(v => ({
       id: v.id,
       name: v.name,

@@ -4258,7 +4258,6 @@ function renderNegKWCenter() {
     const ownerTag = k.owner && k.owner !== 'system' ? `<span style="font-size:10px;background:var(--blue-bg,#eff6ff);color:var(--blue,#2563eb);padding:1px 8px;border-radius:4px;">${k.owner}</span>` : '';
     const productTag = k.product ? `<span style="font-size:10px;background:var(--purple-bg,#f5f3ff);color:var(--purple,#7c3aed);padding:1px 8px;border-radius:4px;">${PRODUCT_LABELS[k.product] || k.product}</span>` : '';
     const catTag = CAT_LABELS[k.category] ? `<span style="font-size:10px;color:var(--text3);">${CAT_LABELS[k.category]}</span>` : '';
-    const delBtn = opts.canDelete ? `<button class="kb-del-btn" data-id="${k.id}" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;padding:2px 4px;flex-shrink:0;" title="删除">✕</button>` : '';
     const checkbox = opts.showCheckbox ? `<input type="checkbox" class="kb-review-check" data-id="${k.id}" style="flex-shrink:0;width:16px;height:16px;cursor:pointer;accent-color:var(--accent);" />` : '';
     return `<div class="ai-kb-item" data-kbid="${k.id}" style="cursor:pointer;">
       <div class="ai-kb-item-header">
@@ -4270,30 +4269,20 @@ function renderNegKWCenter() {
             <span style="font-size:10px;color:var(--text3);">${fmtTime(k.created_at)}</span>
           </div>
         </div>
-        ${notesBadge}${delBtn}
+        ${notesBadge}
         <span style="color:var(--text3);font-size:14px;flex-shrink:0;">›</span>
       </div>
     </div>`;
   }
 
-  function bindItemClicks(container, items, opts) {
+  function bindItemClicks(container, items) {
     container.querySelectorAll('.ai-kb-item').forEach(el => {
       el.addEventListener('click', e => {
-        if (e.target.closest('.kb-del-btn') || e.target.closest('.kb-review-check')) return;
+        if (e.target.closest('.kb-review-check')) return;
         const found = items.find(k => k.id === +el.dataset.kbid);
         if (found) openKBDrawer(found);
       });
     });
-    if (opts.canDelete) {
-      container.querySelectorAll('.kb-del-btn').forEach(btn => {
-        btn.addEventListener('click', async e => {
-          e.stopPropagation();
-          if (!confirm('确认删除？')) return;
-          await SBSync.deleteKnowledge(+btn.dataset.id);
-          renderCurrentTab();
-        });
-      });
-    }
   }
 
   function emptyMsg(text) { return `<div class="muted" style="text-align:center;padding:40px;font-size:13px;">${text}</div>`; }
@@ -4330,11 +4319,11 @@ function renderNegKWCenter() {
     let html = '';
     Object.entries(grouped).forEach(([cat, entries]) => {
       html += `<div class="ai-kb-group card"><div class="ai-kb-group-title">${CAT_LABELS[cat] || cat} (${entries.length})</div>`;
-      entries.forEach(k => { html += renderItemCard(k, { canDelete: isAdmin() }); });
+      entries.forEach(k => { html += renderItemCard(k, {}); });
       html += '</div>';
     });
     listEl.innerHTML = html;
-    bindItemClicks(listEl, items, { canDelete: isAdmin() });
+    bindItemClicks(listEl, items);
   }
 
   // ── Tab: 分产品知识库（按产品分组全展示，无筛选框） ──
@@ -4351,17 +4340,17 @@ function renderNegKWCenter() {
       const entries = byProduct[p];
       if (!entries || !entries.length) return;
       html += `<div class="ai-kb-group card"><div class="ai-kb-group-title">${PRODUCT_LABELS[p] || p} (${entries.length})</div>`;
-      entries.forEach(k => { html += renderItemCard(k, { canDelete: isAdmin() }); });
+      entries.forEach(k => { html += renderItemCard(k, {}); });
       html += '</div>';
     });
     Object.entries(byProduct).forEach(([p, entries]) => {
       if (order.includes(p)) return;
       html += `<div class="ai-kb-group card"><div class="ai-kb-group-title">${p} (${entries.length})</div>`;
-      entries.forEach(k => { html += renderItemCard(k, { canDelete: isAdmin() }); });
+      entries.forEach(k => { html += renderItemCard(k, {}); });
       html += '</div>';
     });
     listEl.innerHTML = html;
-    bindItemClicks(listEl, items, { canDelete: isAdmin() });
+    bindItemClicks(listEl, items);
   }
 
   // ── Tab: 我的知识库 ──
@@ -4388,13 +4377,12 @@ function renderNegKWCenter() {
               <span style="font-size:10px;color:var(--text3);">${fmtTime(k.created_at)}</span>
             </div>
           </div>
-          <button class="kb-del-btn" data-id="${k.id}" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;padding:2px 4px;" title="删除">✕</button>
           <span style="color:var(--text3);font-size:14px;">›</span>
         </div>
       </div>`;
     });
     listEl.innerHTML = html;
-    bindItemClicks(listEl, items, { canDelete: true });
+    bindItemClicks(listEl, items);
   }
 
   // ── Tab: 待评审 ──
@@ -4422,9 +4410,9 @@ function renderNegKWCenter() {
         <button id="kb-review-reject" style="padding:6px 16px;border-radius:6px;border:1px solid var(--red);background:var(--red-bg);color:var(--red);font-size:12px;font-weight:600;cursor:pointer;">驳回选中</button>
       </div>`;
     }
-    items.forEach(k => { html += renderItemCard(k, { canDelete: admin, showCheckbox: admin }); });
+    items.forEach(k => { html += renderItemCard(k, { showCheckbox: admin }); });
     listEl.innerHTML = html;
-    bindItemClicks(listEl, items, { canDelete: admin });
+    bindItemClicks(listEl, items);
 
     if (admin) {
       const scopeSel = document.getElementById('kb-review-scope');

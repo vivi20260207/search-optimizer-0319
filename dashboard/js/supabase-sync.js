@@ -323,6 +323,11 @@
     _kbCache: null,
     _kbCacheTime: 0,
 
+    clearKnowledgeCache() {
+      this._kbCache = null;
+      this._kbCacheTime = 0;
+    },
+
     async getKnowledge(filterTags) {
       if (!sb()) return [];
       var now = Date.now();

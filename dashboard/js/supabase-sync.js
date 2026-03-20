@@ -31,11 +31,45 @@
     mSet:    '_sb_mig_settings'
   };
 
+  function showSyncStatus(msg, ok) {
+    var el = document.getElementById('sb-sync-status');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'sb-sync-status';
+      el.style.cssText = 'position:fixed;bottom:8px;right:8px;padding:6px 14px;border-radius:8px;font-size:11px;z-index:99999;transition:opacity .5s;pointer-events:none;';
+      document.body.appendChild(el);
+    }
+    el.style.background = ok ? '#10b981' : '#ef4444';
+    el.style.color = '#fff';
+    el.textContent = msg;
+    el.style.opacity = '1';
+    clearTimeout(el._t);
+    el._t = setTimeout(function () { el.style.opacity = '0'; }, ok ? 3000 : 8000);
+  }
+
   window.SBSync = {
     ready: false,
 
     async init() {
-      if (!sb()) { console.warn('[SB] client unavailable'); return; }
+      var client = sb();
+      if (!client) {
+        console.warn('[SB] Supabase client not available — supabase CDN may not have loaded');
+        showSyncStatus('☁️ 云端同步不可用（Supabase 未加载）', false);
+        return;
+      }
+
+      // Quick connectivity test
+      try {
+        var test = await client.from('postback_log').select('id').limit(1);
+        if (test.error) throw test.error;
+      } catch (e) {
+        console.error('[SB] Connectivity test failed:', e);
+        showSyncStatus('☁️ 云端连接失败: ' + (e.message || e), false);
+        return;
+      }
+
+      console.log('[SB] Connected to Supabase ✓');
+
       try {
         await Promise.all([
           this._syncNotes('negkw'),
@@ -44,8 +78,19 @@
           this._syncSettings()
         ]);
         this.ready = true;
-        console.log('[SB] ✅ sync complete');
-      } catch (e) { console.error('[SB] init error', e); }
+        var noteCount = 0;
+        try {
+          var n1 = JSON.parse(localStorage.getItem(LS.negkw) || '{}');
+          var n2 = JSON.parse(localStorage.getItem(LS.rca) || '{}');
+          Object.values(n1).forEach(function(a){ noteCount += a.length; });
+          Object.values(n2).forEach(function(a){ noteCount += a.length; });
+        } catch(e){}
+        console.log('[SB] ✅ Sync complete — ' + noteCount + ' notes loaded');
+        showSyncStatus('☁️ 已同步 (' + noteCount + ' 条备注)', true);
+      } catch (e) {
+        console.error('[SB] Sync error:', e);
+        showSyncStatus('☁️ 同步出错: ' + (e.message || e), false);
+      }
     },
 
     /* ─── Notes ─── */
@@ -54,7 +99,9 @@
       var lsKey  = LS[type];
       var migKey = type === 'negkw' ? LS.mNegkw : LS.mRca;
 
+      // Step 1: Migrate localStorage → Supabase (one-time per browser)
       if (!localStorage.getItem(migKey)) {
+        var migOk = false;
         try {
           var local = JSON.parse(localStorage.getItem(lsKey) || '{}');
           var ids = Object.keys(local);
@@ -71,15 +118,20 @@
             });
             if (rows.length) {
               for (var i = 0; i < rows.length; i += 100) {
-                await sb().from('diagnostic_notes').insert(rows.slice(i, i + 100));
+                var ins = await sb().from('diagnostic_notes').insert(rows.slice(i, i + 100));
+                if (ins.error) throw ins.error;
               }
-              console.log('[SB] migrated ' + rows.length + ' ' + type + ' notes');
+              console.log('[SB] Migrated ' + rows.length + ' ' + type + ' notes to cloud');
             }
           }
-        } catch (e) { console.warn('[SB] mig error ' + type, e); }
-        localStorage.setItem(migKey, '1');
+          migOk = true;
+        } catch (e) {
+          console.error('[SB] Migration error for ' + type + ':', e);
+        }
+        if (migOk) localStorage.setItem(migKey, '1');
       }
 
+      // Step 2: Pull from Supabase → update localStorage
       try {
         var res = await sb()
           .from('diagnostic_notes')
@@ -90,8 +142,21 @@
 
         if (res.error) throw res.error;
 
+        var cloudData = res.data || [];
+        var localRaw = localStorage.getItem(lsKey);
+        var localNotes = {};
+        try { localNotes = JSON.parse(localRaw || '{}'); } catch(e){}
+        var localCount = 0;
+        Object.values(localNotes).forEach(function(a){ localCount += (a||[]).length; });
+
+        // Safety: don't overwrite local data with empty cloud if local has content
+        if (cloudData.length === 0 && localCount > 0) {
+          console.log('[SB] Cloud has 0 ' + type + ' notes but local has ' + localCount + ' — keeping local (migration may be pending)');
+          return;
+        }
+
         var grouped = {};
-        (res.data || []).forEach(function (r) {
+        cloudData.forEach(function (r) {
           if (!grouped[r.diag_id]) grouped[r.diag_id] = [];
           grouped[r.diag_id].push({
             text: r.content, role: r.role,
@@ -100,8 +165,10 @@
           });
         });
         localStorage.setItem(lsKey, JSON.stringify(grouped));
-        console.log('[SB] pulled ' + (res.data || []).length + ' ' + type + ' notes');
-      } catch (e) { console.warn('[SB] pull error ' + type, e); }
+        console.log('[SB] Pulled ' + cloudData.length + ' ' + type + ' notes from cloud');
+      } catch (e) {
+        console.warn('[SB] Pull error for ' + type + ':', e);
+      }
     },
 
     /* ─── Postback ─── */
@@ -110,24 +177,40 @@
       if (!localStorage.getItem(LS.mPb)) {
         var txt = localStorage.getItem(LS.pb) || '';
         if (txt.trim()) {
-          var existing = await sb().from('postback_log').select('id').order('id').limit(1);
-          if (existing.data && existing.data.length) {
-            await sb().from('postback_log')
-              .update({ content: txt, updated_at: new Date().toISOString() })
-              .eq('id', existing.data[0].id);
-          } else {
-            await sb().from('postback_log').insert({ content: txt });
+          try {
+            var existing = await sb().from('postback_log').select('id').order('id').limit(1);
+            if (existing.data && existing.data.length) {
+              var upd = await sb().from('postback_log')
+                .update({ content: txt, updated_at: new Date().toISOString() })
+                .eq('id', existing.data[0].id);
+              if (upd.error) throw upd.error;
+            } else {
+              var ins = await sb().from('postback_log').insert({ content: txt });
+              if (ins.error) throw ins.error;
+            }
+            console.log('[SB] Migrated postback log');
+            localStorage.setItem(LS.mPb, '1');
+          } catch(e) {
+            console.error('[SB] Postback migration error:', e);
           }
-          console.log('[SB] migrated postback');
+        } else {
+          localStorage.setItem(LS.mPb, '1');
         }
-        localStorage.setItem(LS.mPb, '1');
       }
 
-      var res = await sb().from('postback_log').select('content').order('updated_at', { ascending: false }).limit(1);
-      if (res.data && res.data.length) {
-        localStorage.setItem(LS.pb, res.data[0].content || '');
-        var ta = document.getElementById('postback-log-textarea');
-        if (ta && ta !== document.activeElement) ta.value = res.data[0].content || '';
+      try {
+        var res = await sb().from('postback_log').select('content').order('updated_at', { ascending: false }).limit(1);
+        if (res.data && res.data.length) {
+          var cloudContent = res.data[0].content || '';
+          var localContent = localStorage.getItem(LS.pb) || '';
+          if (cloudContent && cloudContent.length >= localContent.length) {
+            localStorage.setItem(LS.pb, cloudContent);
+            var ta = document.getElementById('postback-log-textarea');
+            if (ta && ta !== document.activeElement) ta.value = cloudContent;
+          }
+        }
+      } catch(e) {
+        console.warn('[SB] Postback pull error:', e);
       }
     },
 
@@ -137,20 +220,29 @@
       var keys = ['gemini_api_key', 'gemini_model'];
 
       if (!localStorage.getItem(LS.mSet)) {
-        var rows = [];
-        keys.forEach(function (k) {
-          var v = localStorage.getItem(k);
-          if (v) rows.push({ key: k, value: v });
-        });
-        if (rows.length) {
-          await sb().from('user_settings').upsert(rows, { onConflict: 'key' }).catch(function () {});
-          console.log('[SB] migrated settings');
+        try {
+          var rows = [];
+          keys.forEach(function (k) {
+            var v = localStorage.getItem(k);
+            if (v) rows.push({ key: k, value: v });
+          });
+          if (rows.length) {
+            var ups = await sb().from('user_settings').upsert(rows, { onConflict: 'key' });
+            if (ups.error) throw ups.error;
+            console.log('[SB] Migrated settings');
+          }
+          localStorage.setItem(LS.mSet, '1');
+        } catch(e) {
+          console.error('[SB] Settings migration error:', e);
         }
-        localStorage.setItem(LS.mSet, '1');
       }
 
-      var res = await sb().from('user_settings').select('key, value');
-      if (res.data) res.data.forEach(function (r) { if (r.value) localStorage.setItem(r.key, r.value); });
+      try {
+        var res = await sb().from('user_settings').select('key, value');
+        if (res.data) res.data.forEach(function (r) { if (r.value) localStorage.setItem(r.key, r.value); });
+      } catch(e) {
+        console.warn('[SB] Settings pull error:', e);
+      }
     },
 
     /* ═══ Write Methods (fire-and-forget from UI code) ═══ */
@@ -238,9 +330,13 @@
     }
   };
 
+  // Auto-init
+  function doInit() {
+    SBSync.init().catch(function(e) { console.error('[SB] init failed:', e); });
+  }
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () { SBSync.init(); });
+    document.addEventListener('DOMContentLoaded', doInit);
   } else {
-    SBSync.init();
+    doInit();
   }
 })();

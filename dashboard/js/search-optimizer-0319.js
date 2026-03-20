@@ -136,7 +136,7 @@ function isFullDataRange(start, end) {
   return start <= ADW_META.startDate && end >= ADW_META.endDate;
 }
 function rowInDateRange(row, start, end) {
-  if (!row || !row.date) return isFullDataRange(start, end);
+  if (!row || !row.date) return true;
   return row.date >= start && row.date <= end;
 }
 
@@ -926,46 +926,6 @@ function renderDrillDown() {
 // ═══════════════════════════════════════
 let ALL_ANOMALIES = [];
 
-// ── Gemini API: 解析 generateContent JSON（处理安全拦截、空 parts、多段文本）──
-function parseGeminiGenerateContent(data) {
-  if (!data) return { ok: false, text: '', err: '空响应' };
-  const pf = data.promptFeedback;
-  if (pf && pf.blockReason) {
-    const msg = pf.blockReasonMessage ? ` (${pf.blockReasonMessage})` : '';
-    return { ok: false, text: '', err: `提示被拦截: ${pf.blockReason}${msg}` };
-  }
-  const cands = data.candidates;
-  if (!cands || cands.length === 0) {
-    return { ok: false, text: '', err: '无 candidates（可能被安全策略拦截或配额异常）。可换模型或缩短上下文。' };
-  }
-  const c0 = cands[0];
-  const parts = c0.content && c0.content.parts;
-  let text = '';
-  if (Array.isArray(parts)) {
-    text = parts.map(p => (p && p.text) ? String(p.text) : '').join('');
-  }
-  const fr = c0.finishReason;
-  if (text && text.trim()) {
-    return { ok: true, text: text.trim(), err: null };
-  }
-  const frHint = {
-    SAFETY: '输出被安全策略拦截（无正文）。可缩短诊断上下文或换种问法。',
-    RECITATION: '输出被引用策略拦截。',
-    MAX_TOKENS: '输出被截断为空，可缩短问题或联系开发调大 maxOutputTokens。',
-    PROHIBITED_CONTENT: '违禁内容，未返回正文。',
-    OTHER: '模型结束但无正文（OTHER）。',
-    STOP: 'finishReason=STOP 但无文本，可重试或换模型。'
-  };
-  const hint = frHint[fr] || `无文本；finishReason=${fr || '未知'}`;
-  return { ok: false, text: '', err: hint };
-}
-
-function clipGeminiContext(s, maxLen) {
-  const max = maxLen || 14000;
-  if (!s || s.length <= max) return s;
-  return s.slice(0, max) + '\n\n[…上下文已截断]';
-}
-
 // ── RCA Notes Storage (localStorage + Supabase) ──
 const RCA_NOTES_KEY = 'rca_diag_notes';
 function loadRCANotes() { try { return JSON.parse(localStorage.getItem(RCA_NOTES_KEY) || '{}'); } catch { return {}; } }
@@ -1008,71 +968,6 @@ function deleteLastRCASystemNote(aid) {
   }
   all[aid] = notes;
   saveRCANotes(all);
-}
-
-async function callGeminiForRCA(userQuestion, rcaContext, aid, renderFn) {
-  const apiKey = localStorage.getItem('gemini_api_key');
-  if (!apiKey) {
-    addRCANote(aid, '⚠️ 请先在左下角「AI 分析设置」中配置 Gemini API Key。', 'system');
-    renderFn();
-    return;
-  }
-  const model = localStorage.getItem('gemini_model') || 'gemini-2.5-flash';
-
-  let kbSection = '';
-  if (typeof SBSync !== 'undefined' && SBSync.getKnowledge) {
-    try {
-      const kb = await SBSync.getKnowledge();
-      if (kb.length) kbSection = '\n\n## 团队知识库（必须遵守）\n' + kb.map(k => '- ' + k.content).join('\n');
-    } catch(e) {}
-  }
-
-  const systemPrompt = `你是投放团队的优化师同事，直接说结论和操作建议，不要废话不要情绪价值。
-你的分析必须基于提供的数据（花费、CPA、ROAS、转化、搜索词等），给出量化判断。
-关键规则：不同产品的 Campaign 中，同一个词的角色不同（品牌词 vs 竞品词），分析前必须先判断 Campaign 属于哪个产品。
-回答格式：
-1. 结论（一句话）
-2. 数据依据（列关键数字）
-3. 操作建议（具体到改什么、改多少）
-如果数据不够判断就直接说缺什么数据，不要瞎猜。用中文。`;
-
-  addRCANote(aid, '🤖 分析中...', 'system');
-  renderFn();
-
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: `${systemPrompt}${kbSection}\n\n---\n\n${rcaContext}\n\n---\n\n优化师问: ${userQuestion}` }] }],
-        generationConfig: { temperature: 0.2, maxOutputTokens: 1024 }
-      })
-    });
-    if (!resp.ok) {
-      const errData = await resp.json().catch(() => ({}));
-      deleteLastRCASystemNote(aid);
-      addRCANote(aid, `❌ AI 调用失败: ${errData?.error?.message || 'HTTP ' + resp.status}`, 'system');
-      renderFn(); return;
-    }
-    const data = await resp.json();
-    const parsed = parseGeminiGenerateContent(data);
-    deleteLastRCASystemNote(aid);
-    if (parsed.ok) {
-      addRCANote(aid, `🤖 ${parsed.text}`, 'system');
-    } else {
-      addRCANote(aid, `❌ AI 无有效输出: ${parsed.err}`, 'system');
-    }
-    renderFn();
-    setTimeout(() => {
-      const thread = document.getElementById('rca-drawer-notes');
-      if (thread) thread.scrollTop = thread.scrollHeight;
-    }, 50);
-  } catch (err) {
-    deleteLastRCASystemNote(aid);
-    addRCANote(aid, `❌ 网络错误: ${err.message}`, 'system');
-    renderFn();
-  }
 }
 
 function renderRCANotesThread(aid, listIdx) {
@@ -1149,48 +1044,15 @@ function renderRootCause() {
   });
 }
 
-function buildRCAContext(anomaly, rcaSteps) {
-  let ctx = `## 异常类型: ${anomaly.type}\n## 严重程度: ${anomaly.severity}\n## 层级: ${anomaly.level}\n## 目标: ${anomaly.target || ''}\n\n`;
-  ctx += `## 异常描述\n${anomaly.desc}\n\n`;
-  ctx += `## 根因分析路径\n`;
-  rcaSteps.forEach(s => { ctx += `Step ${s.step}: [${s.status}] ${s.title} — ${s.detail}\n`; });
-
-  if (anomaly.campaign) {
-    const campName = typeof anomaly.campaign === 'string' ? anomaly.campaign : anomaly.campaign.name;
-    if (campName) {
-      const sts = ST_MAP[campName] || [];
-      if (sts.length > 0) {
-        const topST = sts.sort((a, b) => (b.cost || 0) - (a.cost || 0)).slice(0, 15);
-        ctx += `\n## 该Campaign Top搜索词（按花费排序）\n`;
-        topST.forEach(st => {
-          const roas = st.cost > 0 ? ((st.purchaseNewValue || 0) / st.cost).toFixed(2) : '0';
-          ctx += `- "${st.term}" | 花费:${Math.round(st.cost)} | 转化:${st.purchaseNew || 0} | ROAS:${roas}\n`;
-        });
-      }
-      const kws = KW_MAP[campName] || [];
-      if (kws.length > 0) {
-        const topKW = kws.sort((a, b) => (b.cost || 0) - (a.cost || 0)).slice(0, 10);
-        ctx += `\n## 该Campaign Top关键词\n`;
-        topKW.forEach(k => {
-          ctx += `- "${k.keyword}" [${k.matchType || ''}] | 花费:${Math.round(k.cost || 0)} | 转化:${k.conversions || 0} | CPC:${k.cpc || 0}\n`;
-        });
-      }
-    }
-  }
-  return ctx;
-}
-
 function openRCADrawer(anomaly, anomalyId, rcaSteps) {
   const overlay = U.el('drawer-overlay');
   const drawer = U.el('kw-drawer');
   const sevLabel = { critical: '🔴 紧急', warning: '🟡 警告', info: '💡 建议', positive: '🟢 亮点' };
   U.el('drawer-title').textContent = anomaly.title;
   U.el('drawer-subtitle').innerHTML = `${sevLabel[anomaly.severity] || ''} · ${anomaly.level} · ${anomaly.type.replace(/_/g, ' ')}`;
-  const rcaContext = buildRCAContext(anomaly, rcaSteps);
 
   function renderContent() {
     const notes = getRCANotes(anomalyId);
-    const hasKey = !!localStorage.getItem('gemini_api_key');
     let html = '';
 
     html += `<div class="drawer-section"><div class="drawer-section-title">📋 异常描述</div>
@@ -1212,12 +1074,12 @@ function openRCADrawer(anomaly, anomalyId, rcaSteps) {
     html += `<div class="drawer-section"><div class="drawer-section-title">💬 备注与反馈 (${notes.length})</div>`;
     html += '<div class="note-thread" id="rca-drawer-notes" style="max-height:320px;overflow-y:auto;">';
     if (notes.length === 0) {
-      html += `<div class="muted" style="text-align:center;padding:16px;font-size:12px;">${hasKey ? '输入问题，AI 会基于异常数据直接给操作建议' : '输入备注（配置 API Key 可启用 AI 分析）'}</div>`;
+      html += `<div class="muted" style="text-align:center;padding:16px;font-size:12px;">输入备注...</div>`;
     } else {
       notes.forEach((n, i) => {
         const time = new Date(n.ts).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
         const isAI = n.role === 'system' && n.text.startsWith('🤖');
-        const saveKbBtn = n.role === 'user' ? `<button class="note-save-kb-btn rca-kb-btn" data-idx="${i}" title="存入知识库，AI 下次分析会记住">📌</button>` : '';
+        const saveKbBtn = n.role === 'user' ? `<button class="note-save-kb-btn rca-kb-btn" data-idx="${i}" title="存入知识库">📌</button>` : '';
         html += `<div class="note-bubble note-${n.role}" ${isAI ? 'style="background:#f0f4ff;border:1px solid #bfdbfe;"' : ''}>
           <div>${n.text.replace(/\n/g, '<br>')}</div>
           <div class="note-time">${n.role === 'user' ? '我' : isAI ? 'AI' : '系统'} · ${time}
@@ -1229,8 +1091,8 @@ function openRCADrawer(anomaly, anomalyId, rcaSteps) {
     }
     html += '</div>';
     html += `<div class="note-input-wrap">
-      <textarea class="note-input" id="rca-drawer-input" placeholder="${hasKey ? '问 AI：这个异常怎么处理？' : '输入备注...'}" rows="2"></textarea>
-      <button class="note-send-btn" id="rca-drawer-send">${hasKey ? '🤖 AI分析' : '发送'}</button>
+      <textarea class="note-input" id="rca-drawer-input" placeholder="输入备注..." rows="2"></textarea>
+      <button class="note-send-btn" id="rca-drawer-send">发送</button>
     </div></div>`;
 
     U.html('drawer-body', html);
@@ -1247,13 +1109,6 @@ function openRCADrawer(anomaly, anomalyId, rcaSteps) {
         const thread = document.getElementById('rca-drawer-notes');
         if (thread) thread.scrollTop = thread.scrollHeight;
       }, 50);
-
-      if (localStorage.getItem('gemini_api_key')) {
-        callGeminiForRCA(text, rcaContext, anomalyId, () => {
-          renderContent();
-          updateRCANoteIndicator(anomalyId);
-        });
-      }
     });
 
     U.el('rca-drawer-input').addEventListener('keydown', (e) => {
@@ -1272,7 +1127,7 @@ function openRCADrawer(anomaly, anomalyId, rcaSteps) {
               btn.textContent = '✅';
               btn.title = '已存入知识库';
               btn.disabled = true;
-              addRCANote(anomalyId, '📌 已将上述纠正存入知识库，AI 下次分析会自动参考。', 'system');
+              addRCANote(anomalyId, '📌 已存入知识库。', 'system');
               renderContent();
               updateRCANoteIndicator(anomalyId);
             }
@@ -1422,59 +1277,6 @@ function kwTag(k) {
   return '<span class="action-tag tag-traffic">— <span class="tag-reason">暂无数据</span></span>';
 }
 
-function buildTermInsights(terms) {
-  const insights = [];
-  const totalPurchase = terms.reduce((s, d) => s + d.purchaseNew, 0);
-  const withPurchase = terms.filter(d => d.purchaseNew > 0);
-  if (withPurchase.length) {
-    const top5 = withPurchase.slice(0, 5);
-    const top5Conv = top5.reduce((s, d) => s + d.purchaseNew, 0);
-    const pct = totalPurchase > 0 ? (top5Conv / totalPurchase * 100).toFixed(0) : 0;
-    insights.push({ level: 'positive', icon: '🟢', text: `<strong>核心词集中</strong>：TOP 5 搜索词（${top5.map(d => '「' + d.term + '」').join('、')}）贡献 <span class="metric">${pct}%</span> 付费转化。` });
-  }
-  const burnTerms = terms.filter(d => (d.cost || 0) > 200 && d.purchaseNew === 0);
-  if (burnTerms.length) {
-    const totalBurn = burnTerms.reduce((s, d) => s + d.cost, 0);
-    insights.push({ level: 'critical', icon: '🔴', text: `<strong>烧钱预警</strong>：${burnTerms.length} 个搜索词花费 > 200 HKD 但 0 转化，合计浪费 <span class="metric">${U.fmt(totalBurn)} HKD</span>。<span class="action">建议立即否定</span>。` });
-  }
-  const convRate = terms.length > 0 ? (withPurchase.length / terms.length * 100).toFixed(1) : 0;
-  insights.push({ level: convRate > 10 ? 'positive' : 'warning', icon: '📊', text: `<strong>转化率概览</strong>：${terms.length} 个搜索词中 <span class="metric">${withPurchase.length} 个 (${convRate}%)</span> 产生付费转化。${convRate < 5 ? '转化率偏低，建议收紧匹配。' : ''}` });
-  return insights;
-}
-
-function buildKwInsights(keywords) {
-  const insights = [];
-  const withQS = keywords.filter(k => k.qualityScore);
-  const lowQS = withQS.filter(k => Number(k.qualityScore) < 6);
-  const highQS = withQS.filter(k => Number(k.qualityScore) >= 8);
-  const hasCost = keywords.some(k => k.cost > 0);
-  if (lowQS.length) {
-    const details = [];
-    lowQS.forEach(k => { if (k.landingPageExp && k.landingPageExp.includes('低于')) details.push('着陆页'); if (k.adRelevance && k.adRelevance.includes('低于')) details.push('相关性'); });
-    insights.push({ level: 'warning', icon: '🟡', text: `<strong>质量得分待优化</strong>：${lowQS.length} 个关键词 QS < 6（${lowQS.slice(0, 3).map(k => '「' + k.keyword + '」').join('、')}）。<span class="action">低 QS 推高 CPC，建议优化</span>。` });
-  }
-  if (highQS.length) {
-    insights.push({ level: 'positive', icon: '🟢', text: `<strong>高质量关键词</strong>：${highQS.length} 个 QS ≥ 8（${highQS.slice(0, 3).map(k => '「' + k.keyword + '」QS:' + k.qualityScore).join('、')}），优质流量来源。` });
-  }
-  if (hasCost) {
-    const highROAS = keywords.filter(k => k.cost > 0 && k.purchaseNew > 0 && k.purchaseNewValue / k.cost >= 1.5);
-    if (highROAS.length) insights.push({ level: 'info', icon: '💡', text: `<strong>提价机会</strong>：${highROAS.length} 个关键词 ROAS > 1.5（${highROAS.slice(0, 3).map(k => '「' + k.keyword + '」').join('、')}），<span class="action">建议提价抢量</span>。` });
-    const burn = keywords.filter(k => k.cost > 500 && k.purchaseNew === 0);
-    if (burn.length) insights.push({ level: 'critical', icon: '🔴', text: `<strong>烧钱关键词</strong>：${burn.length} 个花费 > 500 HKD 但 0 转化（${burn.slice(0, 3).map(k => '「' + k.keyword + '」花费' + U.fmt(k.cost)).join('、')}），<span class="action">建议暂停或降价</span>。` });
-  }
-  return insights;
-}
-
-function buildAIPanel(id, insights) {
-  if (!insights || !insights.length) return '';
-  return `<div class="ai-panel" id="${id}">
-    <div class="ai-panel-header" onclick="this.parentElement.classList.toggle('collapsed')">
-      <span>📊 AI 分析 & 优化建议</span><span>▲</span>
-    </div>
-    <div class="ai-panel-body">${insights.map(i => `<div class="ai-insight ${i.level}"><span class="ai-insight-icon">${i.icon}</span><span class="ai-insight-text">${i.text}</span></div>`).join('')}</div>
-  </div>`;
-}
-
 function renderSearchTermsEnhanced() {
   const sel = U.el('st-campaign-select').value;
   const campCfg = ST_CAMP_MAP[sel];
@@ -1496,8 +1298,6 @@ function renderSearchTermsEnhanced() {
     <div class="kpi-card"><div class="kpi-label">总新付费转化</div><div class="kpi-value clr-good">${U.fmt(totalPurchase, 0)}</div></div>
   `);
 
-  U.html('st-ai-panel', buildAIPanel('ai-st', buildTermInsights(terms)));
-
   // ─── Keywords table with QS↔CPC ───
   if (keywords.length) {
     const hasCostData = keywords.some(k => k.cost > 0);
@@ -1511,8 +1311,6 @@ function renderSearchTermsEnhanced() {
       <div><strong>均 CPC：</strong>${U.fmt(avgCPC)}</div>
       <div><strong>总转化：</strong>${U.fmt(totalKwConv, 0)}</div>
     `);
-    U.html('kw-ai-panel', buildAIPanel('ai-kw', buildKwInsights(keywords)));
-
     if (hasCostData) {
       U.el('kw-thead').querySelector('tr').innerHTML = '<th>关键词</th><th>匹配</th><th class="num">点击</th><th class="num">展示</th><th class="num">CTR</th><th class="num">CPC</th><th class="num">花费</th><th class="num">转化</th><th class="num">转化价值</th><th class="num">CPA</th><th class="num">ROAS</th><th class="num">QS</th><th>QS↔CPC</th><th class="num">IS</th><th>操作建议</th>';
 
@@ -3081,21 +2879,15 @@ function renderChangesSummary(changes, label) {
 // INIT
 // ═══════════════════════════════════════
 function refreshAllDashboardRenders() {
-  renderTrustGate();
-  renderCampaignOverview();
-  renderDrillDown();
-  renderRootCause();
-  refreshSearchTermsSelectOnly();
-  renderAdCopy();
-  renderClusterView();
-  renderQualityScore();
-  renderDevices();
-  renderLandingPageZone();
-  renderGender();
-  renderAge();
-  renderAdPolicy();
-  renderChangeLog();
-  renderNegKWCenter();
+  const modules = [
+    renderTrustGate, renderCampaignOverview, renderDrillDown, renderRootCause,
+    refreshSearchTermsSelectOnly, renderAdCopy, renderClusterView,
+    renderQualityScore, renderDevices, renderLandingPageZone,
+    renderGender, renderAge, renderAdPolicy, renderChangeLog, renderNegKWCenter
+  ];
+  modules.forEach(fn => {
+    try { fn(); } catch (e) { console.error('[Dashboard]', fn.name, e); }
+  });
 }
 
 function syncSidebarDataLines() {
@@ -3410,113 +3202,14 @@ function renderNegKWCenter() {
     return html;
   }
 
-  function buildDiagContext(title, detail, extraHtml) {
-    let ctx = `## 当前诊断对象\n${title}\n\n## 诊断详情 (HTML转文本)\n`;
-    const tmp = document.createElement('div');
-    tmp.innerHTML = detail;
-    ctx += tmp.textContent + '\n';
-    if (extraHtml) {
-      tmp.innerHTML = extraHtml;
-      ctx += '\n## 受影响搜索词 / 附加数据\n' + tmp.textContent + '\n';
-    }
-    return ctx;
-  }
-
-  async function callGeminiAnalysis(userQuestion, diagContext, diagId, renderFn) {
-    const apiKey = localStorage.getItem('gemini_api_key');
-    if (!apiKey) {
-      addNote(diagId, '⚠️ 请先在左下角「AI 分析设置」中配置 Gemini API Key。', 'system');
-      renderFn();
-      return;
-    }
-    const model = localStorage.getItem('gemini_model') || 'gemini-2.5-flash';
-
-    let kbSection = '';
-    if (typeof SBSync !== 'undefined' && SBSync.getKnowledge) {
-      try {
-        const kb = await SBSync.getKnowledge();
-        if (kb.length) kbSection = '\n\n## 团队知识库（必须遵守）\n' + kb.map(k => '- ' + k.content).join('\n');
-      } catch(e) {}
-    }
-
-    const systemPrompt = `你是投放团队的优化师同事，直接说结论和操作建议，不要废话不要情绪价值。
-你正在看否定关键词诊断数据，基于提供的数据（花费、转化、ROAS、搜索词等）做量化判断。
-关键规则：不同产品的 Campaign 中，同一个词的角色不同（品牌词 vs 竞品词），分析前必须先判断 Campaign 属于哪个产品。
-回答格式：
-1. 结论（一句话）
-2. 数据依据（列关键数字）
-3. 操作建议（具体到改什么、改多少）
-如果数据不够判断就直接说缺什么数据，不要瞎猜。用中文。`;
-
-    const prompt = `${systemPrompt}${kbSection}\n\n---\n\n${diagContext}\n\n---\n\n用户问题: ${userQuestion}`;
-
-    addNote(diagId, '🤖 AI 分析中...', 'system');
-    renderFn();
-
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 1024 }
-        })
-      });
-
-      if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({}));
-        const errMsg = errData?.error?.message || `HTTP ${resp.status}`;
-        deleteLastSystemNote(diagId);
-        addNote(diagId, `❌ AI 调用失败: ${errMsg}`, 'system');
-        renderFn();
-        return;
-      }
-
-      const data = await resp.json();
-      const parsed = parseGeminiGenerateContent(data);
-
-      deleteLastSystemNote(diagId);
-      if (parsed.ok) {
-        addNote(diagId, `🤖 AI 分析:\n${parsed.text}`, 'system');
-      } else {
-        addNote(diagId, `❌ AI 无有效输出: ${parsed.err}`, 'system');
-      }
-      renderFn();
-      setTimeout(() => {
-        const thread = U.el('diag-note-thread');
-        if (thread) thread.scrollTop = thread.scrollHeight;
-      }, 50);
-    } catch (err) {
-      deleteLastSystemNote(diagId);
-      addNote(diagId, `❌ 网络错误: ${err.message}`, 'system');
-      renderFn();
-    }
-  }
-
-  function deleteLastSystemNote(diagId) {
-    const allNotes = loadNotes();
-    const notes = allNotes[diagId] || [];
-    for (let i = notes.length - 1; i >= 0; i--) {
-      if (notes[i].role === 'system') {
-        if (notes[i]._sbId && typeof SBSync !== 'undefined') SBSync.deleteNote(notes[i]._sbId).catch(() => {});
-        notes.splice(i, 1); break;
-      }
-    }
-    allNotes[diagId] = notes;
-    saveNotes(allNotes);
-  }
-
   function openDiagDrawer(title, detail, diagId, extraHtml) {
     const overlay = U.el('drawer-overlay');
     const drawer = U.el('kw-drawer');
     U.el('drawer-title').textContent = title;
     U.el('drawer-subtitle').textContent = '';
-    const diagContext = buildDiagContext(title, detail, extraHtml);
 
     function renderDrawerContent() {
       const notes = getNotes(diagId);
-      const hasKey = !!localStorage.getItem('gemini_api_key');
       let html = '';
       html += `<div class="drawer-section"><div class="drawer-section-title">🔍 诊断详情</div>`;
       html += `<div class="drawer-verdict"><div class="drawer-verdict-detail">${detail}</div></div></div>`;
@@ -3528,7 +3221,7 @@ function renderNegKWCenter() {
       notes.forEach((n, i) => {
         const time = new Date(n.ts).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
         const isAI = n.role === 'system' && n.text.startsWith('🤖');
-        const saveKbBtn = n.role === 'user' ? `<button class="note-save-kb-btn" data-idx="${i}" title="存入知识库，AI 下次分析会记住">📌</button>` : '';
+        const saveKbBtn = n.role === 'user' ? `<button class="note-save-kb-btn" data-idx="${i}" title="存入知识库">📌</button>` : '';
         html += `<div class="note-bubble note-${n.role}" ${isAI ? 'style="background:#f0f4ff;border:1px solid #bfdbfe;"' : ''}>
           <div>${n.text.replace(/\n/g, '<br>')}</div>
           <div class="note-time">${n.role === 'user' ? '我' : isAI ? 'AI' : '系统'} · ${time}
@@ -3538,12 +3231,12 @@ function renderNegKWCenter() {
         </div>`;
       });
       if (notes.length === 0) {
-        html += '<div class="muted" style="text-align:center;padding:16px;font-size:12px;">输入问题，AI 会基于当前数据上下文给出分析判断</div>';
+        html += '<div class="muted" style="text-align:center;padding:16px;font-size:12px;">输入备注...</div>';
       }
       html += '</div>';
       html += `<div class="note-input-wrap">
-        <textarea class="note-input" id="diag-note-input" placeholder="${hasKey ? '输入问题，AI 会自动分析回答...' : '输入备注（配置 API Key 可启用 AI 分析）'}" rows="2"></textarea>
-        <button class="note-send-btn" id="diag-note-send">${hasKey ? '🤖 AI分析' : '发送'}</button>
+        <textarea class="note-input" id="diag-note-input" placeholder="输入备注..." rows="2"></textarea>
+        <button class="note-send-btn" id="diag-note-send">发送</button>
       </div></div>`;
       U.html('drawer-body', html);
 
@@ -3558,10 +3251,6 @@ function renderNegKWCenter() {
           const thread = U.el('diag-note-thread');
           if (thread) thread.scrollTop = thread.scrollHeight;
         }, 50);
-
-        if (localStorage.getItem('gemini_api_key')) {
-          callGeminiAnalysis(text, diagContext, diagId, renderDrawerContent);
-        }
       });
 
       U.el('diag-note-input').addEventListener('keydown', (e) => {
@@ -3580,7 +3269,7 @@ function renderNegKWCenter() {
                 btn.textContent = '✅';
                 btn.title = '已存入知识库';
                 btn.disabled = true;
-                addNote(diagId, '📌 已将上述纠正存入知识库，AI 下次分析会自动参考。', 'system');
+                addNote(diagId, '📌 已存入知识库。', 'system');
                 renderDrawerContent();
               }
             });
@@ -3948,51 +3637,6 @@ function renderNegKWCenter() {
 }
 
 // ═══════════════════════════════════════
-// AI SETTINGS MODAL
-// ═══════════════════════════════════════
-(function initAISettings() {
-  const modal = U.el('ai-settings-modal');
-  const btnOpen = U.el('btn-ai-settings');
-  const btnClose = U.el('ai-settings-close');
-  const btnSave = U.el('ai-settings-save');
-  const keyInput = U.el('ai-gemini-key');
-  const modelSelect = U.el('ai-gemini-model');
-  const statusEl = U.el('ai-settings-status');
-  if (!modal || !btnOpen) return;
-
-  btnOpen.addEventListener('click', () => {
-    keyInput.value = localStorage.getItem('gemini_api_key') || '';
-    modelSelect.value = localStorage.getItem('gemini_model') || 'gemini-2.5-flash';
-    statusEl.textContent = keyInput.value ? '✅ 已配置' : '';
-    modal.style.display = 'flex';
-  });
-
-  btnClose.addEventListener('click', () => { modal.style.display = 'none'; });
-  modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
-
-  btnSave.addEventListener('click', () => {
-    const key = keyInput.value.trim();
-    const model = modelSelect.value;
-    if (key) {
-      localStorage.setItem('gemini_api_key', key);
-      localStorage.setItem('gemini_model', model);
-      statusEl.textContent = '✅ 已保存！诊断面板的备注框现在支持 AI 分析。';
-      statusEl.style.color = '#10b981';
-      if (typeof SBSync !== 'undefined') {
-        SBSync.saveSetting('gemini_api_key', key).catch(() => {});
-        SBSync.saveSetting('gemini_model', model).catch(() => {});
-      }
-    } else {
-      localStorage.removeItem('gemini_api_key');
-      statusEl.textContent = '已清除 API Key，AI 分析已关闭。';
-      statusEl.style.color = '#f59e0b';
-      if (typeof SBSync !== 'undefined') SBSync.deleteSetting('gemini_api_key').catch(() => {});
-    }
-    setTimeout(() => { modal.style.display = 'none'; }, 1500);
-  });
-})();
-
-// ═══════════════════════════════════════
 // 回传调整记录（纯文本，localStorage）
 // ═══════════════════════════════════════
 (function initPostbackLog() {
@@ -4033,4 +3677,107 @@ function renderNegKWCenter() {
   }
 
   ta.addEventListener('input', scheduleSave);
+})();
+
+// ═══════════════════════════════════════
+// AI 知识库管理
+// ═══════════════════════════════════════
+(function initKnowledgeBase() {
+  const listEl = document.getElementById('kb-list');
+  const countEl = document.getElementById('kb-count');
+  const addBtn = document.getElementById('kb-add-btn');
+  if (!listEl) return;
+
+  const categoryLabels = {
+    brand_keyword: '🏷️ 品牌词',
+    negkw_rule: '🚫 否定词规则',
+    campaign_rule: '📋 Campaign规则',
+    user_correction: '✏️ 用户纠正',
+  };
+
+  async function renderKB() {
+    if (typeof SBSync === 'undefined' || !SBSync.getKnowledge) {
+      listEl.innerHTML = '<div class="muted" style="text-align:center;padding:40px;font-size:13px;">Supabase 未连接，知识库不可用</div>';
+      return;
+    }
+
+    const items = await SBSync.getKnowledge();
+    if (countEl) countEl.textContent = items.length + ' 条';
+
+    if (items.length === 0) {
+      listEl.innerHTML = '<div class="muted" style="text-align:center;padding:40px;font-size:13px;">暂无知识条目。可在备注中点击 📌 存入，或点击上方「+ 新增知识」手动添加。</div>';
+      return;
+    }
+
+    const grouped = {};
+    items.forEach(k => {
+      const cat = k.category || 'other';
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(k);
+    });
+
+    let html = '';
+    Object.entries(grouped).forEach(([cat, entries]) => {
+      const label = categoryLabels[cat] || cat;
+      html += `<div style="margin-bottom:18px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:var(--text2);">${label} (${entries.length})</div>`;
+      entries.forEach(k => {
+        const tags = (k.tags || []).map(t => `<span style="background:var(--bg-sub);padding:1px 6px;border-radius:4px;font-size:10px;color:var(--text3);">${t}</span>`).join(' ');
+        html += `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--card-bg);font-size:12px;">
+          <div style="flex:1;line-height:1.6;">
+            <div>${k.content}</div>
+            <div style="margin-top:4px;">${tags}</div>
+          </div>
+          <button class="kb-del-btn" data-id="${k.id}" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;padding:2px 4px;flex-shrink:0;" title="删除">✕</button>
+        </div>`;
+      });
+      html += '</div>';
+    });
+
+    listEl.innerHTML = html;
+
+    listEl.querySelectorAll('.kb-del-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('确认删除该知识条目？')) return;
+        await SBSync.deleteKnowledge(parseInt(btn.dataset.id));
+        renderKB();
+      });
+    });
+  }
+
+  if (addBtn) {
+    addBtn.addEventListener('click', () => {
+      const content = prompt('输入知识内容：');
+      if (!content || !content.trim()) return;
+      const catChoice = prompt('分类（brand_keyword / negkw_rule / campaign_rule / user_correction）：', 'user_correction');
+      const cat = catChoice && catChoice.trim() ? catChoice.trim() : 'user_correction';
+      const tagStr = prompt('标签（逗号分隔，可留空）：', '');
+      const tags = tagStr ? tagStr.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+      if (typeof SBSync !== 'undefined' && SBSync.addKnowledge) {
+        SBSync.addKnowledge(cat, content.trim(), 'manual', tags).then(id => {
+          if (id) renderKB();
+        });
+      }
+    });
+  }
+
+  const observer = new MutationObserver(() => {
+    const section = document.getElementById('view-knowledge-base');
+    if (section && section.classList.contains('active')) {
+      renderKB();
+      observer.disconnect();
+    }
+  });
+
+  document.querySelectorAll('.nav-item').forEach(item => {
+    if (item.dataset.view === 'knowledge-base') {
+      item.addEventListener('click', () => setTimeout(renderKB, 100));
+    }
+  });
+
+  setTimeout(() => {
+    const section = document.getElementById('view-knowledge-base');
+    if (section && section.classList.contains('active')) renderKB();
+  }, 2000);
 })();

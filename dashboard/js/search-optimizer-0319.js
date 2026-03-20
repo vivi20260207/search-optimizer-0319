@@ -3344,10 +3344,15 @@ function setGlobalDateRange(start, end, options = {}) {
       applyBtn.style.background = 'var(--green, #22c55e)';
       setTimeout(() => { applyBtn.textContent = '应用'; applyBtn.style.background = ''; }, 1200);
     }
+    const spendSum = Math.round(SEARCH_CAMPS.reduce((t, c) => t + (c.spend || 0), 0));
+    const dailyKeys = Object.keys(CAMP_DAILY_MAP).length;
+    const kwKeys = Object.keys(KW_MAP).length;
+    const rawKwKeys = Object.keys(RAW_KW_BY_CAMP).length;
+    const noSlice = SEARCH_CAMPS.filter(c => c._noCampDailySlice).length;
     if (hint) {
-      hint.textContent = `已应用: ${s} ~ ${e}（${SEARCH_CAMPS.length} 个系列, KW ${Object.keys(KW_MAP).length}, ST ${Object.keys(ST_MAP).length}）`;
+      hint.textContent = `✅ ${s} ~ ${e} | Spend合计 ${spendSum} | 系列 ${SEARCH_CAMPS.length}(无日切${noSlice}) | dailyMap ${dailyKeys} | KW ${kwKeys}/${rawKwKeys}`;
     }
-    console.log('[DateRange] Applied:', s, '~', e, 'CAMPS:', SEARCH_CAMPS.length);
+    console.log('[DateRange] Applied:', s, '~', e, 'Spend:', spendSum, 'dailyMap:', dailyKeys, 'rawKW:', rawKwKeys, 'KW:', kwKeys, 'noSlice:', noSlice);
   } catch (err) {
     console.error('[DateRange] Error:', err);
     if (hint) hint.textContent = '日期应用出错: ' + err.message;

@@ -4118,6 +4118,7 @@ function renderNegKWCenter() {
     ai_relevance:    '🔗 相关性链条',
     ai_keyword_method:'🔑 关键词方法论',
     ai_budget:       '💵 预算分配',
+    ai_sop:          '📋 投放SOP与业务参数',
   };
 
   const OPT_CATS = {

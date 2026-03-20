@@ -1,0 +1,13 @@
+[
+  {"category":"ai_sop","content":"【B1/B2】各产品目标 ROAS、目标 CPA 以团队在中台/BI 的配置为准，可按国家线区分；未单独配置前，不要用「全账户统一 ROAS≥2.0」替代所有产品判断。","source":"user_correction","tags":["b1","b2","roas","cpa","product"]},
+  {"category":"ai_sop","content":"【B3】低价值地区：除印度外，东南亚 PH/ID/TH/VN 也按低价值地区策略处理（与印度类似的设备/回传/放量谨慎度）。","source":"user_correction","tags":["b3","geo","sea","low_value"]},
+  {"category":"ai_sop","content":"【B4】否定词/高 CPA 阈值（按产品与地区）：老产品 fachat、parau — 美欧与印度成本已趋同；iOS 新增付费用户 CPA 理想 <20，20–30 可接受，若持续 >40 建议加否定或停词。新品 pinkpinkchat — 主投美欧与中东；若 iOS 新增付费 CPA 持续 >20，建议加否定或停词。","source":"user_correction","tags":["b4","negkw","cpa","ios","product"]},
+  {"category":"ai_sop","content":"【B5】新市场/新 Campaign 测试期与学习期：一般为 1–2 周；此期间数据波动大，避免过早否定或大幅改 CPA/预算。","source":"user_correction","tags":["b5","learning","test_period"]},
+  {"category":"ai_sop","content":"【B6】转化延迟：多数在点击后 1 天内完成 purchase；至迟次日可在后台看到转化，短周期看数时需考虑该延迟。","source":"user_correction","tags":["b6","conversion_lag","attribution"]},
+  {"category":"ai_sop","content":"【B7】RLSA / 搜索再营销受众叠加：当前未使用，后续有计划；分析时不要假设已上 RLSA。","source":"user_correction","tags":["b7","rlsa","audience"]},
+  {"category":"ai_sop","content":"【B8】广告时段/排期关注：印度侧重周一、周二；美欧侧重哥伦比亚时间周日、周一；另需关注大促与全球穆斯林节日对流量与转化的影响。","source":"user_correction","tags":["b8","schedule","seasonality"]},
+  {"category":"ai_sop","content":"【B9/B10】关键词结构：同时投放品牌词、功能词、竞品词；各类型占比因产品而异（例如 livu 相关竞品词占比较高）。竞品词投放的单独 ROAS 目标目前未明确，分析时勿臆造竞品线 ROAS。","source":"user_correction","tags":["b9","b10","competitor","brand","keyword_mix"]},
+  {"category":"ai_sop","content":"【B11】核心转化事件：各产品均以 purchase 为主，分析口径统一按购买转化。","source":"user_correction","tags":["b11","conversion","purchase"]},
+  {"category":"ai_sop","content":"【B12】扩预算规则：当周多数时间「总 ROAS」与「新 iOS 付费用户 CPA」均达标时可加预算；常规每次约上调原预算的 20%；若单 Campaign 日预算低于约 100 美元，可每次约加 50 美元。避免过频、过大调整以免打乱智能出价学习。","source":"user_correction","tags":["b12","budget","scaling","tcpa"]},
+  {"category":"ai_sop","content":"【B13】优化理念：先保证 ROI（利润/效率），再谈放量规模；不同阶段仍遵循「ROI 优先」。","source":"user_correction","tags":["b13","philosophy","roi_first"]}
+]

@@ -3,28 +3,17 @@
  */
 
 // ============================================================
-// AI Analysis Engine - 规则引擎 + 标注生成
+// Tag Engine - 操作建议标注
 // ============================================================
 const AI = {
-  panelHTML(id, insights) {
-    if (!insights || !insights.length) return '';
-    return `<div class="ai-panel" id="${id}">
-      <div class="ai-panel-header" onclick="AI.toggle('${id}')">
-        <h4>📊 AI 分析 & 优化建议</h4>
-        <span class="ai-panel-toggle">▲</span>
-      </div>
-      <div class="ai-panel-body">${insights.map(i =>
-        `<div class="ai-insight ${i.level}">
-          <span class="ai-insight-icon">${i.icon}</span>
-          <span class="ai-insight-text">${i.text}</span>
-        </div>`).join('')}
-      </div>
-    </div>`;
-  },
-
-  toggle(id) {
-    document.getElementById(id)?.classList.toggle('collapsed');
-  },
+  panelHTML() { return ''; },
+  termInsights() { return []; },
+  kwInsights() { return []; },
+  placementInsights() { return []; },
+  deviceInsights() { return []; },
+  geoInsights() { return []; },
+  scheduleInsights() { return []; },
+  collectAll() { return []; },
 
   // --- Search Terms ---
   termTag(d) {
@@ -41,59 +30,6 @@ const AI = {
     if ((d.pageView || 0) > 500 && d.purchaseNew === 0) return '<span class="action-tag tag-watch">🟡 高流量无转化</span>';
     if ((d.firstVisit || 0) > 100 && d.purchaseNew === 0) return '<span class="action-tag tag-watch">🟡 流量词-观察</span>';
     return '<span class="action-tag tag-traffic">— 仅流量</span>';
-  },
-
-  termInsights(terms) {
-    const insights = [];
-    const totalPurchase = terms.reduce((s, d) => s + d.purchaseNew, 0);
-    const withPurchase = terms.filter(d => d.purchaseNew > 0);
-    const noPurchase = terms.filter(d => d.purchaseNew === 0);
-    const top5 = withPurchase.slice(0, 5);
-    const top5Conv = top5.reduce((s, d) => s + d.purchaseNew, 0);
-    const hasCost = terms.some(d => d.cost > 0);
-
-    if (top5.length) {
-      const pct = totalPurchase > 0 ? (top5Conv / totalPurchase * 100).toFixed(0) : 0;
-      insights.push({
-        level: 'positive', icon: '🟢',
-        text: `<strong>核心词集中</strong>：TOP 5 搜索词（${top5.map(d => '「' + d.term + '」').join('、')}）贡献 <span class="metric">${pct}%</span> 付费转化，是核心流量来源。`
-      });
-    }
-
-    const broadHigh = withPurchase.filter(d => d.purchaseNew >= 3 && d.matchType && d.matchType.includes('广泛'));
-    if (broadHigh.length > 0) {
-      insights.push({
-        level: 'info', icon: '💡',
-        text: `<strong>精确匹配机会</strong>：${broadHigh.length} 个高转化词通过广泛匹配触发（${broadHigh.slice(0,3).map(d => '「'+d.term+'」').join('、')}），<span class="action">建议添加为精确匹配关键字</span>，降低泛匹配浪费。`
-      });
-    }
-
-    if (hasCost) {
-      const burnTerms = terms.filter(d => d.cost > 200 && d.purchaseNew === 0);
-      if (burnTerms.length > 0) {
-        const totalBurn = burnTerms.reduce((s, d) => s + d.cost, 0);
-        insights.push({
-          level: 'critical', icon: '🔴',
-          text: `<strong>烧钱预警</strong>：${burnTerms.length} 个搜索词花费 > 200 HKD 但 0 转化，合计浪费 <span class="metric">${fmt(totalBurn)} HKD</span>。<span class="action">建议立即添加为否定关键字</span>。`
-        });
-      }
-    }
-
-    const highTrafficNoConv = noPurchase.filter(d => (d.pageView || 0) > 1000);
-    if (highTrafficNoConv.length > 0) {
-      insights.push({
-        level: 'warning', icon: '🟡',
-        text: `<strong>高流量无转化</strong>：${highTrafficNoConv.length} 个词页面浏览 > 1000 但无付费（${highTrafficNoConv.slice(0,3).map(d => '「'+d.term+'」').join('、')}），可能是泛流量词，<span class="action">建议评估是否否定</span>。`
-      });
-    }
-
-    const convRate = terms.length > 0 ? (withPurchase.length / terms.length * 100).toFixed(1) : 0;
-    insights.push({
-      level: convRate > 10 ? 'positive' : 'warning', icon: convRate > 10 ? '📊' : '📊',
-      text: `<strong>转化率概览</strong>：${terms.length} 个搜索词中仅 <span class="metric">${withPurchase.length} 个 (${convRate}%)</span> 产生付费转化。${convRate < 5 ? '转化率偏低，建议优化关键词匹配策略和着陆页。' : ''}`
-    });
-
-    return insights;
   },
 
   // --- Keywords ---
@@ -123,81 +59,6 @@ const AI = {
     return '';
   },
 
-  kwInsights(keywords) {
-    if (!keywords || !keywords.length) return [];
-    const insights = [];
-    const withQS = keywords.filter(k => k.qualityScore);
-    const lowQS = withQS.filter(k => Number(k.qualityScore) < 6);
-    const highQS = withQS.filter(k => Number(k.qualityScore) >= 8);
-    const hasCost = keywords.some(k => k.cost > 0);
-
-    const kwsWithCPC = keywords.filter(k => k.cost > 0 && k.clicks > 0);
-    const avgCPC = kwsWithCPC.length ? kwsWithCPC.reduce((s, k) => s + k.cost / k.clicks, 0) / kwsWithCPC.length : 0;
-    const highQSWithCPC = highQS.filter(k => k.cost > 0 && k.clicks > 0);
-    const lowQSWithCPC = lowQS.filter(k => k.cost > 0 && k.clicks > 0);
-    const highQSAvgCPC = highQSWithCPC.length ? highQSWithCPC.reduce((s, k) => s + k.cost / k.clicks, 0) / highQSWithCPC.length : 0;
-    const lowQSAvgCPC = lowQSWithCPC.length ? lowQSWithCPC.reduce((s, k) => s + k.cost / k.clicks, 0) / lowQSWithCPC.length : 0;
-
-    if (lowQS.length > 0) {
-      const lpIssue = lowQS.filter(k => k.landingPageExp && k.landingPageExp.includes('低于'));
-      const adRelIssue = lowQS.filter(k => k.adRelevance && k.adRelevance.includes('低于'));
-      const ctrIssue = lowQS.filter(k => k.expectedCTR && k.expectedCTR.includes('低于'));
-      let detail = '';
-      if (lpIssue.length) detail += `${lpIssue.length} 个着陆页体验低、`;
-      if (adRelIssue.length) detail += `${adRelIssue.length} 个广告相关性低、`;
-      if (ctrIssue.length) detail += `${ctrIssue.length} 个预期CTR低、`;
-      detail = detail.replace(/、$/, '');
-      const cpcNote = lowQSAvgCPC > 0 ? ` 低 QS 词均 CPC <span class="metric">${lowQSAvgCPC.toFixed(2)}</span>${avgCPC > 0 ? '（整体均值 ' + avgCPC.toFixed(2) + '）' : ''}。` : '';
-      insights.push({
-        level: 'warning', icon: '🟡',
-        text: `<strong>质量得分待优化</strong>：${lowQS.length} 个关键词 QS < 6（${lowQS.map(k => '「'+k.keyword+'」').slice(0,3).join('、')}）。${detail ? '其中' + detail + '。' : ''}${cpcNote}<span class="action">低 QS 会推高 CPC，建议针对性优化</span>。`
-      });
-    }
-
-    if (highQS.length > 0) {
-      const cpcNote = highQSAvgCPC > 0 && avgCPC > 0 ? `，均 CPC <span class="metric">${highQSAvgCPC.toFixed(2)}</span>（整体均值 ${avgCPC.toFixed(2)}，${highQSAvgCPC < avgCPC ? '低 ' + ((1 - highQSAvgCPC / avgCPC) * 100).toFixed(0) + '%' : '持平'}）` : '';
-      insights.push({
-        level: 'positive', icon: '🟢',
-        text: `<strong>高质量关键词</strong>：${highQS.length} 个关键词 QS ≥ 8（${highQS.slice(0,4).map(k => '「'+k.keyword+'」QS:'+k.qualityScore).join('、')}）${cpcNote}，是优质流量来源。`
-      });
-    }
-
-    if (highQSAvgCPC > 0 && lowQSAvgCPC > 0 && lowQSAvgCPC > highQSAvgCPC) {
-      const diff = ((lowQSAvgCPC - highQSAvgCPC) / highQSAvgCPC * 100).toFixed(0);
-      insights.push({
-        level: 'info', icon: '📊',
-        text: `<strong>QS↔CPC 实证</strong>：低 QS（<6）词的均 CPC 为 <span class="metric">${lowQSAvgCPC.toFixed(2)}</span>，高 QS（≥8）词为 <span class="metric">${highQSAvgCPC.toFixed(2)}</span>，<strong>低分词 CPC 高出 ${diff}%</strong>。提升 QS 可直接降低点击成本。`
-      });
-    }
-
-    if (hasCost) {
-      const highROAS = keywords.filter(k => k.cost > 0 && k.purchaseNew > 0 && k.purchaseNewValue / k.cost >= 1.5);
-      if (highROAS.length) {
-        insights.push({
-          level: 'info', icon: '💡',
-          text: `<strong>提价机会</strong>：${highROAS.length} 个关键词 ROAS > 1.5（${highROAS.slice(0,3).map(k => '「'+k.keyword+'」').join('、')}），<span class="action">建议适当提价抢量</span>。`
-        });
-      }
-      const burnKW = keywords.filter(k => k.cost > 500 && k.purchaseNew === 0);
-      if (burnKW.length) {
-        insights.push({
-          level: 'critical', icon: '🔴',
-          text: `<strong>烧钱关键词</strong>：${burnKW.length} 个关键词花费 > 500 HKD 但 0 转化（${burnKW.slice(0,3).map(k => '「'+k.keyword+'」花费'+fmt(k.cost)).join('、')}），<span class="action">建议暂停或大幅降价</span>。`
-        });
-      }
-    }
-
-    const noConvKW = keywords.filter(k => k.purchaseNew === 0 && k.status === '有效');
-    if (noConvKW.length > keywords.length * 0.5 && keywords.length > 5) {
-      insights.push({
-        level: 'warning', icon: '🟡',
-        text: `<strong>关键词效率</strong>：${noConvKW.length}/${keywords.length} 个有效关键词无付费转化，<span class="action">建议清理低效词</span>，集中预算到高效词上。`
-      });
-    }
-
-    return insights;
-  },
-
   // --- Placements ---
   placementTag(d) {
     if (d.purchaseNew >= 10) return '<span class="action-tag tag-keep">✅ 优质位置</span>';
@@ -205,47 +66,6 @@ const AI = {
     if (d.purchaseNew > 0) return '<span class="action-tag tag-watch">🟡 低转化</span>';
     if ((d.firstVisit || 0) > 200) return '<span class="action-tag tag-watch">🟡 仅流量</span>';
     return '<span class="action-tag tag-exclude">🔴 建议排除</span>';
-  },
-
-  placementInsights(data) {
-    const insights = [];
-    const total = data.length;
-    const withConv = data.filter(d => d.purchaseNew > 0);
-    const noConv = data.filter(d => d.purchaseNew === 0);
-    const totalPurchase = data.reduce((s, d) => s + d.purchaseNew, 0);
-
-    if (withConv.length > 0) {
-      const top3 = withConv.slice(0, 3);
-      const top3Conv = top3.reduce((s, d) => s + d.purchaseNew, 0);
-      const pct = (top3Conv / totalPurchase * 100).toFixed(0);
-      insights.push({
-        level: 'positive', icon: '🟢',
-        text: `<strong>头部集中</strong>：TOP 3 展示位置贡献 <span class="metric">${pct}%</span> 新付费转化（${top3.map(d => '「' + (d.placement.length > 20 ? d.placement.slice(0,20)+'…' : d.placement) + '」' + d.purchaseNew + '次').join('、')}）。`
-      });
-    }
-
-    if (noConv.length > 0) {
-      const pct = (noConv.length / total * 100).toFixed(0);
-      insights.push({
-        level: noConv.length > total * 0.6 ? 'critical' : 'warning',
-        icon: noConv.length > total * 0.6 ? '🔴' : '🟡',
-        text: `<strong>无转化位置多</strong>：${noConv.length}/${total} 个展示位置（<span class="metric">${pct}%</span>）无付费转化。<span class="action">建议排除低质量位置</span>，将预算集中到有转化的位置。`
-      });
-    }
-
-    const webData = data.filter(d => d.type === '网站');
-    const appData = data.filter(d => d.type === '移动应用');
-    if (webData.length && appData.length) {
-      const webConv = webData.reduce((s, d) => s + d.purchaseNew, 0);
-      const appConv = appData.reduce((s, d) => s + d.purchaseNew, 0);
-      const better = webConv > appConv ? '网站' : '移动应用';
-      insights.push({
-        level: 'info', icon: '💡',
-        text: `<strong>位置类型对比</strong>：${better}类型转化更优（网站 ${webConv} vs 应用 ${appConv}），<span class="action">建议向${better}倾斜预算</span>。`
-      });
-    }
-
-    return insights;
   },
 
   // --- Devices ---
@@ -258,190 +78,12 @@ const AI = {
     return '';
   },
 
-  deviceInsights(devices) {
-    const insights = [];
-    const active = devices.filter(d => d.cost > 0);
-    if (!active.length) return insights;
-
-    const byDevice = {};
-    active.forEach(d => {
-      if (!byDevice[d.device]) byDevice[d.device] = { cost: 0, conv: 0 };
-      byDevice[d.device].cost += d.cost;
-      byDevice[d.device].conv += d.conversions;
-    });
-
-    const entries = Object.entries(byDevice).sort((a, b) => b[1].cost - a[1].cost);
-    const topDevice = entries[0];
-    if (topDevice) {
-      const cpa = topDevice[1].conv > 0 ? (topDevice[1].cost / topDevice[1].conv).toFixed(0) : '∞';
-      insights.push({
-        level: 'info', icon: '📱',
-        text: `<strong>主力设备</strong>：「${topDevice[0]}」花费最高 <span class="metric">${fmt(topDevice[1].cost)} HKD</span>，CPA ${cpa}。`
-      });
-    }
-
-    const noConvDevices = active.filter(d => d.conversions === 0 && d.cost > 200);
-    if (noConvDevices.length) {
-      insights.push({
-        level: 'warning', icon: '🟡',
-        text: `<strong>低效设备</strong>：${noConvDevices.map(d => '「' + d.campaign.split('-').slice(0,3).join('-') + ' ' + d.device + '」').join('、')} 有花费但无转化，<span class="action">建议降低出价调整</span>。`
-      });
-    }
-
-    return insights;
-  },
-
   // --- Geo ---
   geoTag(d) {
     if (d.conversions === 0) return '<span class="action-tag tag-exclude">🔴 无转化</span>';
     if (d.cpa && d.cpa < 80) return '<span class="action-tag tag-boost">🚀 高效-提价</span>';
     if (d.cpa && d.cpa > 200) return '<span class="action-tag tag-watch">🟡 CPA高</span>';
     return '<span class="action-tag tag-keep">✅ 正常</span>';
-  },
-
-  geoInsights(geo) {
-    const insights = [];
-    const withConv = geo.filter(d => d.conversions > 0);
-    const noConv = geo.filter(d => d.conversions === 0 && d.cost > 0);
-    const totalCost = geo.reduce((s, d) => s + d.cost, 0);
-
-    if (withConv.length) {
-      const best = withConv.sort((a, b) => (a.cpa || 9999) - (b.cpa || 9999))[0];
-      const worst = [...withConv].sort((a, b) => b.cpa - a.cpa)[0];
-      if (best && worst && best !== worst) {
-        insights.push({
-          level: 'info', icon: '🌍',
-          text: `<strong>地区差异</strong>：最优「${best.region.split(',')[0]}」CPA <span class="metric">${best.cpa}</span>，最差「${worst.region.split(',')[0]}」CPA <span class="metric">${worst.cpa}</span>，差距 ${(worst.cpa / best.cpa).toFixed(1)}x。<span class="action">建议对高效地区提价，低效地区降价</span>。`
-        });
-      }
-    }
-
-    if (noConv.length) {
-      const wasteCost = noConv.reduce((s, d) => s + d.cost, 0);
-      insights.push({
-        level: 'warning', icon: '🟡',
-        text: `<strong>无转化地区</strong>：${noConv.length} 个地区有花费但无转化，合计 <span class="metric">${fmt(wasteCost)} HKD</span>（${(wasteCost/totalCost*100).toFixed(1)}%），<span class="action">建议排除或大幅降价</span>。`
-      });
-    }
-
-    return insights;
-  },
-
-  // --- Schedule ---
-  scheduleInsights(data) {
-    const insights = [];
-    if (!data || !data.length) return insights;
-
-    const hourlyConv = new Array(24).fill(0);
-    const hourlyCost = new Array(24).fill(0);
-    data.forEach(r => { hourlyConv[r.hour] += r.conversions; hourlyCost[r.hour] += r.cost; });
-
-    const peakHours = hourlyConv.map((c, i) => ({hour: i, conv: c, cost: hourlyCost[i]}))
-      .filter(h => h.conv > 0).sort((a, b) => b.conv - a.conv);
-    const deadHours = hourlyConv.map((c, i) => ({hour: i, conv: c, cost: hourlyCost[i]}))
-      .filter(h => h.conv === 0 && h.cost > 0);
-
-    if (peakHours.length >= 3) {
-      const top3 = peakHours.slice(0, 3);
-      insights.push({
-        level: 'positive', icon: '🟢',
-        text: `<strong>黄金时段</strong>：${top3.map(h => h.hour + ':00').join('、')} 转化最高，<span class="action">建议在这些时段提高出价</span>。`
-      });
-    }
-
-    if (deadHours.length > 0) {
-      const wasteCost = deadHours.reduce((s, h) => s + h.cost, 0);
-      insights.push({
-        level: 'warning', icon: '🟡',
-        text: `<strong>低效时段</strong>：${deadHours.length} 个时段有花费但无转化，合计 <span class="metric">${fmt(wasteCost)} HKD</span>，<span class="action">建议降低出价或暂停投放</span>。`
-      });
-    }
-
-    const dayOrder = ['星期一','星期二','星期三','星期四','星期五','星期六','星期日'];
-    const dayConv = dayOrder.map(_ => 0);
-    data.forEach(r => { const i = dayOrder.indexOf(r.day); if (i >= 0) dayConv[i] += r.conversions; });
-    const bestDay = dayOrder[dayConv.indexOf(Math.max(...dayConv))];
-    const worstDay = dayOrder[dayConv.indexOf(Math.min(...dayConv))];
-    if (bestDay !== worstDay) {
-      insights.push({
-        level: 'info', icon: '📅',
-        text: `<strong>星期分布</strong>：${bestDay.replace('星期','周')} 转化最多，${worstDay.replace('星期','周')} 最少，<span class="action">可针对性调整出价比例</span>。`
-      });
-    }
-
-    return insights;
-  },
-
-  // --- Collect all insights for alerts page ---
-  collectAll() {
-    const all = [];
-    const addGroup = (source, insights) => insights.forEach(i => all.push({...i, source}));
-
-    const termMaps = {
-      'Pu-IN-竞品词': typeof ADW_PU_IN_COMP_SEARCH_TERMS !== 'undefined' ? ADW_PU_IN_COMP_SEARCH_TERMS : [],
-      'Pu-IN-品牌词': typeof ADW_PU_IN_BRAND_SEARCH_TERMS !== 'undefined' ? ADW_PU_IN_BRAND_SEARCH_TERMS : [],
-      'Ft-IN-功能词': typeof ADW_FT_IN_FUNC_SEARCH_TERMS !== 'undefined' ? ADW_FT_IN_FUNC_SEARCH_TERMS : [],
-      'Pu-IN-emeraldchat': typeof ADW_PU_IN_EMERALD_SEARCH_TERMS !== 'undefined' ? ADW_PU_IN_EMERALD_SEARCH_TERMS : [],
-      'Ppt-UK': typeof ADW_PPT_UK_SEARCH_TERMS !== 'undefined' ? ADW_PPT_UK_SEARCH_TERMS : [],
-      'Ppt-US': typeof ADW_PPT_US_SEARCH_TERMS !== 'undefined' ? ADW_PPT_US_SEARCH_TERMS : [],
-    };
-    for (const [name, data] of Object.entries(termMaps)) {
-      if (data.length) addGroup(`搜索词 - ${name}`, AI.termInsights(data));
-    }
-
-    const kwMaps = {
-      'Pu-IN-竞品词': typeof ADW_PU_IN_COMP_KEYWORDS !== 'undefined' ? ADW_PU_IN_COMP_KEYWORDS : [],
-      'Pu-IN-品牌词': typeof ADW_PU_IN_BRAND_KEYWORDS !== 'undefined' ? ADW_PU_IN_BRAND_KEYWORDS : [],
-      'Ft-IN-功能词': typeof ADW_FT_IN_FUNC_KEYWORDS !== 'undefined' ? ADW_FT_IN_FUNC_KEYWORDS : [],
-      'Pu-IN-emeraldchat': typeof ADW_PU_IN_EMERALD_KEYWORDS !== 'undefined' ? ADW_PU_IN_EMERALD_KEYWORDS : [],
-      'Ppt-UK': typeof ADW_PPT_UK_KEYWORDS !== 'undefined' ? ADW_PPT_UK_KEYWORDS : [],
-      'Ppt-US': typeof ADW_PPT_US_KEYWORDS !== 'undefined' ? ADW_PPT_US_KEYWORDS : [],
-    };
-    for (const [name, data] of Object.entries(kwMaps)) {
-      if (data.length) addGroup(`关键词 - ${name}`, AI.kwInsights(data));
-    }
-
-    if (typeof ADW_PU_IN_GEO !== 'undefined') addGroup('地理位置 - Pu-IN', AI.geoInsights(ADW_PU_IN_GEO));
-    if (typeof ADW_PPT_UK_SCHEDULE !== 'undefined') addGroup('投放时段 - Ppt-UK', AI.scheduleInsights(ADW_PPT_UK_SCHEDULE));
-
-    const placMaps = {
-      'Pu-IN-Display': typeof ADW_PU_IN_PLACEMENTS !== 'undefined' ? ADW_PU_IN_PLACEMENTS : [],
-      'Ft-US-Display': typeof ADW_FT_US_PLACEMENTS !== 'undefined' ? ADW_FT_US_PLACEMENTS : [],
-    };
-    for (const [name, data] of Object.entries(placMaps)) {
-      if (data.length) addGroup(`展示位置 - ${name}`, AI.placementInsights(data));
-    }
-
-    const allDevices = [
-      ...(typeof ADW_FT_US_DEVICES !== 'undefined' ? ADW_FT_US_DEVICES : []),
-      ...(typeof ADW_PU_IN_DEVICES !== 'undefined' ? ADW_PU_IN_DEVICES : []),
-      ...(typeof ADW_PU_IN_COMP_DEVICES !== 'undefined' ? ADW_PU_IN_COMP_DEVICES : []),
-      ...(typeof ADW_PPT_UK_DEVICES !== 'undefined' ? ADW_PPT_UK_DEVICES : []),
-      ...(typeof ADW_PPT_US_DEVICES !== 'undefined' ? ADW_PPT_US_DEVICES : []),
-    ];
-    if (allDevices.length) addGroup('设备分析', AI.deviceInsights(allDevices));
-
-    if (typeof LP_VERSION_DATA !== 'undefined') {
-      const allLPPages = [];
-      LP_VERSION_DATA.sites.forEach(site => {
-        site.pages.forEach(page => {
-          const activeVer = page.versions.find(v => v.isActive);
-          allLPPages.push({ ...page, site, activeVer, domain: site.domain, productShort: site.productShort });
-        });
-      });
-      addGroup('落地页管理', getLPGlobalInsights(allLPPages));
-      addGroup('词-页匹配', getLPMatrixInsights(LP_VERSION_DATA.keywordPageMap));
-    }
-
-    if (typeof AB_TEST_DATA !== 'undefined') {
-      addGroup('A/B 测试', getABInsights());
-    }
-
-    all.sort((a, b) => {
-      const order = {critical: 0, warning: 1, info: 2, positive: 3};
-      return (order[a.level] ?? 4) - (order[b.level] ?? 4);
-    });
-    return all;
   }
 };
 
@@ -3130,7 +2772,7 @@ function renderABDetail() {
   // AI insights for this test
   const testInsights = [];
   if (t.result.recommendation) {
-    testInsights.push({ level: t.result.canPromote ? 'positive' : t.status === 'paused' ? 'warning' : 'info', icon: t.result.canPromote ? '🟢' : '💡', text: `<strong>AI 分析</strong>：${t.result.recommendation}` });
+    testInsights.push({ level: t.result.canPromote ? 'positive' : t.status === 'paused' ? 'warning' : 'info', icon: t.result.canPromote ? '🟢' : '💡', text: `<strong>分析</strong>：${t.result.recommendation}` });
   }
   if (winner && !winner.isControl && control && control.metrics && winner.metrics) {
     const roasDelta = ((winner.metrics.roas - control.metrics.roas) / control.metrics.roas * 100).toFixed(1);

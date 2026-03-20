@@ -8,7 +8,7 @@
 --    支持软删除：deleted_at 非空 = 前端已删除但保留历史
 CREATE TABLE IF NOT EXISTS diagnostic_notes (
   id          BIGSERIAL    PRIMARY KEY,
-  note_type   TEXT         NOT NULL CHECK (note_type IN ('negkw', 'rca')),
+  note_type   TEXT         NOT NULL CHECK (note_type IN ('negkw', 'rca', 'kb')),
   diag_id     TEXT         NOT NULL,
   content     TEXT         NOT NULL,
   role        TEXT         NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'system')),

@@ -20,6 +20,17 @@
       <li class="nav-item" data-view="trust-gate">
         <span class="nav-icon">🛡️</span> 数据可信度
       </li>
+      <li class="nav-item" data-view="budget-monitor">
+        <span class="nav-icon">💰</span> 预算监控
+        <span class="nav-badge" id="nav-budget-count">0</span>
+      </li>
+      <li class="nav-item" data-view="cpa-monitor">
+        <span class="nav-icon">📉</span> CPA 日环比
+        <span class="nav-badge" id="nav-cpa-count">0</span>
+      </li>
+      <li class="nav-item" data-view="hourly-spend">
+        <span class="nav-icon">⏰</span> 时段花费
+      </li>
       <li class="nav-item" data-view="campaign">
         <span class="nav-icon">📊</span> Campaign 总览
       </li>
@@ -131,6 +142,122 @@
               </tr>
             </thead>
             <tbody id="trust-detail-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ VIEW: 预算监控 ═══ -->
+    <section class="view-section" id="view-budget-monitor">
+      <div class="page-header">
+        <div>
+          <h2>SOP 1a：每日花费 vs 预算监控</h2>
+          <span class="page-header-meta">花费低于预算 70% 或超过 120% 时自动告警 | 帮助判断是否需要调整出价</span>
+        </div>
+        <span class="data-tag data-tag-real">REAL DATA</span>
+      </div>
+      <div id="budget-kpis" class="kpi-grid kpi-grid-5"></div>
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">
+          <h3>各 Campaign 预算利用率</h3>
+          <span class="muted">日均花费 / 日预算 | 红色 = 异常（<70% 或 >120%）</span>
+        </div>
+        <div class="card-body-flush table-wrap" style="max-height:calc(100vh - 280px);overflow-y:auto;">
+          <table>
+            <thead><tr>
+              <th style="min-width:200px">Campaign</th>
+              <th class="num">日预算</th>
+              <th class="num">日均花费</th>
+              <th class="num">利用率</th>
+              <th>状态</th>
+              <th class="num">最近一天花费</th>
+              <th class="num">最近一天利用率</th>
+              <th>趋势（近7天利用率）</th>
+              <th>建议</th>
+            </tr></thead>
+            <tbody id="budget-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ VIEW: CPA 日环比监控 ═══ -->
+    <section class="view-section" id="view-cpa-monitor">
+      <div class="page-header">
+        <div>
+          <h2>SOP 2a：CPA 日环比波动监控</h2>
+          <span class="page-header-meta">新用户 CPA 相较前天波动 >30% 时自动预警 | 下钻排查 CTR / CPC / CVR 异常源</span>
+        </div>
+        <span class="data-tag data-tag-real">REAL DATA</span>
+      </div>
+      <div id="cpa-kpis" class="kpi-grid kpi-grid-4"></div>
+      <div id="cpa-alert-list" style="margin-bottom:16px;"></div>
+      <div class="card">
+        <div class="card-header">
+          <h3>Campaign CPA 逐日趋势</h3>
+          <span class="muted">红色行 = 日环比波动 >30%</span>
+        </div>
+        <div class="card-body-flush table-wrap" style="max-height:calc(100vh - 320px);overflow-y:auto;">
+          <table>
+            <thead><tr>
+              <th style="min-width:180px">Campaign</th>
+              <th>日期</th>
+              <th class="num">花费</th>
+              <th class="num">转化</th>
+              <th class="num">CPA</th>
+              <th class="num">前日CPA</th>
+              <th class="num">环比变化</th>
+              <th class="num">CTR</th>
+              <th class="num">CPC</th>
+              <th class="num">CVR</th>
+              <th>异常归因</th>
+            </tr></thead>
+            <tbody id="cpa-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ VIEW: 时段花费分布 ═══ -->
+    <section class="view-section" id="view-hourly-spend">
+      <div class="page-header">
+        <div>
+          <h2>SOP 1b：时段花费分布</h2>
+          <span class="page-header-meta">检测花费是否集中在少数小时 | 热力图展示各 Campaign 24 小时花费分布</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <select id="hourly-camp-select" class="camp-select">
+            <option value="all">全部 Campaign</option>
+          </select>
+          <select id="hourly-date-select" class="camp-select">
+            <option value="latest">最近一天</option>
+            <option value="3d">近3天均值</option>
+            <option value="7d">近7天均值</option>
+          </select>
+          <span class="data-tag data-tag-real">REAL DATA</span>
+        </div>
+      </div>
+      <div id="hourly-kpis" class="kpi-grid kpi-grid-4"></div>
+      <div id="hourly-alert-list" style="margin-bottom:16px;"></div>
+      <div class="card">
+        <div class="card-header"><h3>24 小时花费热力图</h3><span class="muted">颜色越深花费越高 | 红色 = 集中度异常</span></div>
+        <div class="card-body" id="hourly-heatmap" style="overflow-x:auto;"></div>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <div class="card-header"><h3>时段明细表</h3></div>
+        <div class="card-body-flush table-wrap" style="max-height:400px;overflow-y:auto;">
+          <table>
+            <thead><tr>
+              <th>Campaign</th><th>日期</th>
+              <th class="num">0h</th><th class="num">1h</th><th class="num">2h</th><th class="num">3h</th>
+              <th class="num">4h</th><th class="num">5h</th><th class="num">6h</th><th class="num">7h</th>
+              <th class="num">8h</th><th class="num">9h</th><th class="num">10h</th><th class="num">11h</th>
+              <th class="num">12h</th><th class="num">13h</th><th class="num">14h</th><th class="num">15h</th>
+              <th class="num">16h</th><th class="num">17h</th><th class="num">18h</th><th class="num">19h</th>
+              <th class="num">20h</th><th class="num">21h</th><th class="num">22h</th><th class="num">23h</th>
+              <th class="num">集中度</th>
+            </tr></thead>
+            <tbody id="hourly-tbody"></tbody>
           </table>
         </div>
       </div>
@@ -795,11 +922,13 @@
 <script src="js/adw_data_assets.js"></script>
 <script src="js/adw_data_changelog.js?v=20260320b"></script>
 <script src="js/adw_data_negkw.js?v=20260319b"></script>
+<script>if(typeof ADW_LP_HEALTH==='undefined')var ADW_LP_HEALTH=[];</script>
+<script src="js/adw_data_lp.js" onerror=""></script>
 <script src="js/campaign_product_map.js?v=20260320a"></script>
 <script src="js/utils-0319.js"></script>
 <script src="js/engine-0319.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/supabase-sync.js?v=20260320kb2"></script>
-<script src="js/search-optimizer-0319.js?v=20260320kb2"></script>
+<script src="js/supabase-sync.js?v=20260320fix3"></script>
+<script src="js/search-optimizer-0319.js?v=20260320fix3"></script>
 </body>
 </html>

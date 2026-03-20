@@ -378,6 +378,7 @@ function rebuildFlatArrays() {
 const CAMP_DAILY_MAP = {};
 
 (function autoRegisterDaily() {
+  try {
   const globals = Object.keys(window);
 
   globals.filter(k => k.startsWith('ADW_CAMP_') && Array.isArray(window[k]) && window[k].length > 0)
@@ -429,6 +430,10 @@ const CAMP_DAILY_MAP = {};
     'ST:', Object.keys(ST_MAP).length,
     'DEV:', Object.keys(DEV_MAP).length,
     'DATE:', DATE_RANGE.start, '~', DATE_RANGE.end);
+  } catch (e) {
+    console.error('[AutoReg] FATAL:', e);
+    document.title = 'ERR: ' + e.message;
+  }
 })();
 
 // ═══════════════════════════════════════
@@ -511,6 +516,345 @@ function renderTrustGate() {
     </tr>`;
   });
   U.html('trust-detail-tbody', detailHtml);
+}
+
+// ═══════════════════════════════════════
+// SOP 1a: 预算监控 — 每日花费 vs 日预算
+// ═══════════════════════════════════════
+function renderBudgetMonitor() {
+  const budgetMap = (typeof ADW_BUDGET_MAP !== 'undefined') ? ADW_BUDGET_MAP : {};
+  const rows = [];
+  let alertCount = 0;
+
+  SEARCH_CAMPS.forEach(c => {
+    const budget = budgetMap[c.name];
+    if (!budget || budget <= 0) return;
+    const daily = (CAMP_DAILY_MAP[c.name] || []).filter(r => rowInDateRange(r, DATE_RANGE.start, DATE_RANGE.end));
+    if (!daily.length) return;
+
+    const totalCost = daily.reduce((s, r) => s + (r.cost || 0), 0);
+    const avgDaily = totalCost / daily.length;
+    const util = avgDaily / budget * 100;
+
+    const sorted = [...daily].sort((a, b) => b.date.localeCompare(a.date));
+    const latest = sorted[0];
+    const latestUtil = latest ? (latest.cost || 0) / budget * 100 : 0;
+
+    const last7 = sorted.slice(0, 7).reverse();
+    const sparkData = last7.map(d => Math.round((d.cost || 0) / budget * 100));
+
+    let status = 'normal', advice = '--';
+    if (util < 70) {
+      status = 'low'; alertCount++;
+      advice = '花费偏低，考虑提高出价或拓宽匹配类型以增加流量';
+    } else if (util > 120) {
+      status = 'high'; alertCount++;
+      advice = '超预算，检查是否有异常点击或考虑降低出价';
+    } else if (util > 95) {
+      status = 'capped';
+      advice = '接近预算上限，CPA 数据可能虚高';
+    }
+
+    rows.push({ name: c.name, budget, avgDaily, util, latestCost: latest ? latest.cost : 0, latestUtil, sparkData, status, advice });
+  });
+
+  const badge = document.getElementById('nav-budget-count');
+  if (badge) badge.textContent = alertCount > 0 ? alertCount : '';
+
+  const totalBudget = rows.reduce((s, r) => s + r.budget, 0);
+  const totalAvg = rows.reduce((s, r) => s + r.avgDaily, 0);
+  const overallUtil = totalBudget > 0 ? totalAvg / totalBudget * 100 : 0;
+  const lowCount = rows.filter(r => r.status === 'low').length;
+  const highCount = rows.filter(r => r.status === 'high').length;
+
+  U.html('budget-kpis', `
+    <div class="kpi-card"><div class="kpi-label">监控 Campaign</div><div class="kpi-value">${rows.length}</div><div class="kpi-sub">有预算数据</div></div>
+    <div class="kpi-card"><div class="kpi-label">整体利用率</div><div class="kpi-value ${overallUtil < 70 || overallUtil > 120 ? 'clr-bad' : overallUtil > 95 ? 'clr-warn' : 'clr-good'}">${U.fmtPct(overallUtil, 0)}</div><div class="kpi-sub">日均花费 / 日预算</div></div>
+    <div class="kpi-card"><div class="kpi-label">花费偏低 (<70%)</div><div class="kpi-value clr-${lowCount > 0 ? 'warn' : 'good'}">${lowCount}</div><div class="kpi-sub">需考虑提高出价</div></div>
+    <div class="kpi-card"><div class="kpi-label">超预算 (>120%)</div><div class="kpi-value clr-${highCount > 0 ? 'bad' : 'good'}">${highCount}</div><div class="kpi-sub">需考虑降低出价</div></div>
+    <div class="kpi-card"><div class="kpi-label">告警总数</div><div class="kpi-value clr-${alertCount > 0 ? 'bad' : 'good'}">${alertCount}</div></div>
+  `);
+
+  function sparkline(data) {
+    if (!data.length) return '--';
+    const max = Math.max(...data, 1);
+    return '<span style="display:inline-flex;align-items:flex-end;gap:1px;height:20px;">' +
+      data.map(v => {
+        const h = Math.max(2, Math.round(v / max * 18));
+        const clr = v < 70 ? 'var(--orange)' : v > 120 ? 'var(--red)' : 'var(--green)';
+        return `<span style="width:4px;height:${h}px;background:${clr};border-radius:1px;" title="${v}%"></span>`;
+      }).join('') + '</span>';
+  }
+
+  const statusLabel = { low: '花费偏低', high: '超预算', capped: '接近上限', normal: '正常' };
+  const statusCls = { low: 'clr-warn', high: 'clr-bad', capped: 'clr-warn', normal: 'clr-good' };
+
+  let html = '';
+  rows.sort((a, b) => {
+    const order = { high: 0, low: 1, capped: 2, normal: 3 };
+    return (order[a.status] || 9) - (order[b.status] || 9) || b.avgDaily - a.avgDaily;
+  }).forEach(r => {
+    const highlight = r.status === 'low' || r.status === 'high' ? ' style="background:var(--red-bg,rgba(239,68,68,0.06))"' : '';
+    html += `<tr${highlight}>
+      <td class="bold">${U.campShortName(r.name)}</td>
+      <td class="num">${U.fmtK(Math.round(r.budget))}</td>
+      <td class="num">${U.fmtK(Math.round(r.avgDaily))}</td>
+      <td class="num bold ${statusCls[r.status]}">${U.fmtPct(r.util, 0)}</td>
+      <td><span class="${statusCls[r.status]}">${statusLabel[r.status]}</span></td>
+      <td class="num">${U.fmtK(Math.round(r.latestCost))}</td>
+      <td class="num ${r.latestUtil < 70 || r.latestUtil > 120 ? 'clr-bad' : ''}">${U.fmtPct(r.latestUtil, 0)}</td>
+      <td>${sparkline(r.sparkData)}</td>
+      <td class="muted" style="font-size:11px;max-width:200px;white-space:normal;">${r.advice}</td>
+    </tr>`;
+  });
+  U.html('budget-tbody', html);
+}
+
+// ═══════════════════════════════════════
+// SOP 2a: CPA 日环比波动监控
+// ═══════════════════════════════════════
+function renderCPAMonitor() {
+  const alerts = [];
+  const allDayRows = [];
+
+  SEARCH_CAMPS.forEach(c => {
+    const daily = (CAMP_DAILY_MAP[c.name] || []).filter(r => rowInDateRange(r, DATE_RANGE.start, DATE_RANGE.end));
+    if (daily.length < 2) return;
+
+    const byDate = {};
+    daily.forEach(r => {
+      if (!byDate[r.date]) byDate[r.date] = { cost: 0, conv: 0, clicks: 0, impressions: 0 };
+      byDate[r.date].cost += r.cost || 0;
+      byDate[r.date].conv += r.conversions || 0;
+      byDate[r.date].clicks += r.clicks || 0;
+      byDate[r.date].impressions += r.impressions || 0;
+    });
+
+    const dates = Object.keys(byDate).sort();
+    for (let i = 1; i < dates.length; i++) {
+      const prev = byDate[dates[i - 1]];
+      const curr = byDate[dates[i]];
+      const prevCPA = prev.conv > 0 ? prev.cost / prev.conv : null;
+      const currCPA = curr.conv > 0 ? curr.cost / curr.conv : null;
+      if (prevCPA === null || currCPA === null) continue;
+
+      const delta = (currCPA - prevCPA) / prevCPA * 100;
+      const prevCTR = prev.impressions > 0 ? prev.clicks / prev.impressions * 100 : 0;
+      const currCTR = curr.impressions > 0 ? curr.clicks / curr.impressions * 100 : 0;
+      const prevCPC = prev.clicks > 0 ? prev.cost / prev.clicks : 0;
+      const currCPC = curr.clicks > 0 ? curr.cost / curr.clicks : 0;
+      const prevCVR = prev.clicks > 0 ? prev.conv / prev.clicks * 100 : 0;
+      const currCVR = curr.clicks > 0 ? curr.conv / curr.clicks * 100 : 0;
+
+      let attribution = [];
+      if (currCTR > 0 && prevCTR > 0) {
+        const ctrDelta = (currCTR - prevCTR) / prevCTR * 100;
+        if (Math.abs(ctrDelta) > 20) attribution.push(`CTR ${ctrDelta > 0 ? '↑' : '↓'}${Math.abs(ctrDelta).toFixed(0)}%`);
+      }
+      if (currCPC > 0 && prevCPC > 0) {
+        const cpcDelta = (currCPC - prevCPC) / prevCPC * 100;
+        if (Math.abs(cpcDelta) > 15) attribution.push(`CPC ${cpcDelta > 0 ? '↑' : '↓'}${Math.abs(cpcDelta).toFixed(0)}%`);
+      }
+      if (currCVR > 0 && prevCVR > 0) {
+        const cvrDelta = (currCVR - prevCVR) / prevCVR * 100;
+        if (Math.abs(cvrDelta) > 20) attribution.push(`CVR ${cvrDelta > 0 ? '↑' : '↓'}${Math.abs(cvrDelta).toFixed(0)}%`);
+      }
+
+      const isAlert = Math.abs(delta) > 30;
+      if (isAlert) {
+        alerts.push({
+          campaign: c.name, date: dates[i], prevDate: dates[i - 1],
+          currCPA, prevCPA, delta, attribution,
+          cost: curr.cost, conv: curr.conv
+        });
+      }
+
+      allDayRows.push({
+        campaign: c.name, date: dates[i],
+        cost: curr.cost, conv: curr.conv, currCPA, prevCPA, delta,
+        currCTR, currCPC, currCVR, attribution, isAlert
+      });
+    }
+  });
+
+  const badge = document.getElementById('nav-cpa-count');
+  if (badge) badge.textContent = alerts.length > 0 ? alerts.length : '';
+
+  const critAlerts = alerts.filter(a => a.delta > 30);
+  const goodAlerts = alerts.filter(a => a.delta < -30);
+
+  U.html('cpa-kpis', `
+    <div class="kpi-card"><div class="kpi-label">分析天数对</div><div class="kpi-value">${allDayRows.length}</div></div>
+    <div class="kpi-card"><div class="kpi-label">CPA 飙升告警</div><div class="kpi-value clr-${critAlerts.length > 0 ? 'bad' : 'good'}">${critAlerts.length}</div><div class="kpi-sub">环比 >+30%</div></div>
+    <div class="kpi-card"><div class="kpi-label">CPA 骤降</div><div class="kpi-value clr-${goodAlerts.length > 0 ? 'good' : ''}">${goodAlerts.length}</div><div class="kpi-sub">环比 <-30%</div></div>
+    <div class="kpi-card"><div class="kpi-label">总告警</div><div class="kpi-value clr-${alerts.length > 0 ? 'bad' : 'good'}">${alerts.length}</div></div>
+  `);
+
+  let alertHtml = '';
+  alerts.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 20).forEach(a => {
+    const isUp = a.delta > 0;
+    const sev = Math.abs(a.delta) > 50 ? 'critical' : 'warning';
+    alertHtml += `<div class="anomaly-card anomaly-${sev}" style="margin-bottom:10px;padding:14px 18px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <span class="badge badge-${isUp ? 'bad' : 'good'}">${isUp ? 'CPA飙升' : 'CPA骤降'} ${a.delta > 0 ? '+' : ''}${a.delta.toFixed(0)}%</span>
+          <strong style="margin-left:8px;">${U.campShortName(a.campaign)}</strong>
+          <span class="muted" style="margin-left:8px;">${a.prevDate} → ${a.date}</span>
+        </div>
+        <div class="muted">CPA: ${U.fmt(a.prevCPA)} → ${U.fmt(a.currCPA)}</div>
+      </div>
+      ${a.attribution.length ? `<div style="margin-top:6px;font-size:12px;color:var(--text2);">异常归因: <strong>${a.attribution.join('、')}</strong></div>` : ''}
+      ${isUp ? `<div style="margin-top:4px;font-size:12px;color:var(--text3);">建议: 从 Campaign→广告组→关键词维度排查${a.attribution.map(x => x.split(' ')[0]).join('/')}异常源</div>` : ''}
+    </div>`;
+  });
+  U.html('cpa-alert-list', alertHtml);
+
+  const recentRows = allDayRows.sort((a, b) => b.date.localeCompare(a.date) || Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 200);
+  let html = '';
+  recentRows.forEach(r => {
+    const highlight = r.isAlert ? ' style="background:var(--red-bg,rgba(239,68,68,0.06))"' : '';
+    const deltaStr = r.delta > 0 ? `+${r.delta.toFixed(1)}%` : `${r.delta.toFixed(1)}%`;
+    const deltaCls = Math.abs(r.delta) > 30 ? (r.delta > 0 ? 'clr-bad' : 'clr-good') : '';
+    html += `<tr${highlight}>
+      <td class="bold">${U.campShortName(r.campaign)}</td>
+      <td>${r.date}</td>
+      <td class="num">${U.fmtK(Math.round(r.cost))}</td>
+      <td class="num">${U.fmt(r.conv, 0)}</td>
+      <td class="num bold">${U.fmt(r.currCPA)}</td>
+      <td class="num">${U.fmt(r.prevCPA)}</td>
+      <td class="num bold ${deltaCls}">${deltaStr}</td>
+      <td class="num">${U.fmtPct(r.currCTR)}</td>
+      <td class="num">${U.fmt(r.currCPC)}</td>
+      <td class="num">${U.fmtPct(r.currCVR)}</td>
+      <td class="muted" style="font-size:11px;">${r.attribution.join('、') || '--'}</td>
+    </tr>`;
+  });
+  U.html('cpa-tbody', html);
+}
+
+// ═══════════════════════════════════════
+// SOP 1b: 时段花费分布（热力图）
+// ═══════════════════════════════════════
+const RAW_HOURLY_BY_CAMP = {};
+(function autoRegisterHourly() {
+  if (typeof ADW_HOURLY_REGISTRY !== 'undefined' && Array.isArray(ADW_HOURLY_REGISTRY)) {
+    ADW_HOURLY_REGISTRY.forEach(arr => {
+      if (!Array.isArray(arr) || !arr[0] || !arr[0].campaign) return;
+      RAW_HOURLY_BY_CAMP[arr[0].campaign] = arr;
+    });
+  }
+})();
+
+function renderHourlySpend() {
+  const campFilter = (U.el('hourly-camp-select') || {}).value || 'all';
+  const dateMode = (U.el('hourly-date-select') || {}).value || 'latest';
+
+  const campSelect = U.el('hourly-camp-select');
+  if (campSelect && campSelect.options.length <= 1) {
+    Object.keys(RAW_HOURLY_BY_CAMP).forEach(cn => {
+      const opt = document.createElement('option');
+      opt.value = cn; opt.textContent = U.campShortName(cn);
+      campSelect.appendChild(opt);
+    });
+  }
+
+  const allDates = new Set();
+  Object.values(RAW_HOURLY_BY_CAMP).forEach(rows => rows.forEach(r => { if (rowInDateRange(r, DATE_RANGE.start, DATE_RANGE.end)) allDates.add(r.date); }));
+  const sortedDates = [...allDates].sort();
+  if (!sortedDates.length) {
+    U.html('hourly-kpis', '<div class="kpi-card"><div class="kpi-label">暂无小时级数据</div><div class="kpi-value">--</div><div class="kpi-sub">需运行 fetch_adw_data.py 拉取</div></div>');
+    U.html('hourly-heatmap', '<div class="muted" style="padding:20px;">暂无小时级数据。请运行 <code>fetch_adw_data.py</code> 后刷新。</div>');
+    U.html('hourly-tbody', '');
+    return;
+  }
+
+  let targetDates;
+  if (dateMode === 'latest') targetDates = [sortedDates[sortedDates.length - 1]];
+  else if (dateMode === '3d') targetDates = sortedDates.slice(-3);
+  else targetDates = sortedDates.slice(-7);
+
+  const campResults = [];
+  let alertList = [];
+
+  const campNames = campFilter === 'all' ? Object.keys(RAW_HOURLY_BY_CAMP) : [campFilter];
+  campNames.forEach(camp => {
+    const rows = (RAW_HOURLY_BY_CAMP[camp] || []).filter(r => targetDates.includes(r.date));
+    if (!rows.length) return;
+
+    const hourCost = new Array(24).fill(0);
+    const hourCount = new Array(24).fill(0);
+    rows.forEach(r => {
+      hourCost[r.hour] += r.cost || 0;
+      hourCount[r.hour]++;
+    });
+    const divisor = targetDates.length || 1;
+    const hourAvg = hourCost.map(c => c / divisor);
+    const totalCost = hourAvg.reduce((s, v) => s + v, 0);
+
+    const topHours = hourAvg.map((v, i) => ({ h: i, cost: v })).sort((a, b) => b.cost - a.cost);
+    let top3Cost = 0;
+    for (let i = 0; i < Math.min(3, topHours.length); i++) top3Cost += topHours[i].cost;
+    const concentration = totalCost > 0 ? top3Cost / totalCost * 100 : 0;
+
+    const isConcentrated = concentration > 60;
+    if (isConcentrated) {
+      const peakHours = topHours.slice(0, 3).map(t => t.h + 'h').join(', ');
+      alertList.push({ camp, concentration, peakHours, totalCost });
+    }
+
+    campResults.push({ camp, hourAvg, totalCost, concentration, isConcentrated });
+  });
+
+  const totalCamps = campResults.length;
+  const concentratedCount = campResults.filter(r => r.isConcentrated).length;
+
+  U.html('hourly-kpis', `
+    <div class="kpi-card"><div class="kpi-label">分析 Campaign</div><div class="kpi-value">${totalCamps}</div><div class="kpi-sub">${targetDates.length === 1 ? targetDates[0] : targetDates[0] + ' ~ ' + targetDates[targetDates.length - 1]}</div></div>
+    <div class="kpi-card"><div class="kpi-label">花费集中异常</div><div class="kpi-value clr-${concentratedCount > 0 ? 'bad' : 'good'}">${concentratedCount}</div><div class="kpi-sub">Top3小时占比 >60%</div></div>
+    <div class="kpi-card"><div class="kpi-label">可用日期</div><div class="kpi-value">${sortedDates.length}</div><div class="kpi-sub">${sortedDates[0]} ~ ${sortedDates[sortedDates.length - 1]}</div></div>
+    <div class="kpi-card"><div class="kpi-label">展示模式</div><div class="kpi-value" style="font-size:16px;">${dateMode === 'latest' ? '单日' : dateMode === '3d' ? '3天均值' : '7天均值'}</div></div>
+  `);
+
+  let alertHtml = '';
+  alertList.forEach(a => {
+    alertHtml += `<div class="anomaly-card anomaly-warning" style="margin-bottom:8px;padding:12px 16px;">
+      <span class="badge badge-bad">花费集中</span>
+      <strong style="margin-left:8px;">${U.campShortName(a.camp)}</strong>
+      <span class="muted" style="margin-left:8px;">Top3 小时（${a.peakHours}）占总花费 ${a.concentration.toFixed(0)}%</span>
+      <span class="muted" style="margin-left:8px;">— 预算可能在几小时内耗尽，导致剩余时段无展示</span>
+    </div>`;
+  });
+  U.html('hourly-alert-list', alertHtml);
+
+  let globalMax = 0;
+  campResults.forEach(r => r.hourAvg.forEach(v => { if (v > globalMax) globalMax = v; }));
+
+  let heatHtml = '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr><th style="text-align:left;padding:6px 8px;min-width:180px;">Campaign</th>';
+  for (let h = 0; h < 24; h++) heatHtml += `<th style="padding:4px;text-align:center;width:3.5%;">${h}</th>`;
+  heatHtml += '<th style="padding:4px;text-align:center;">集中度</th></tr></thead><tbody>';
+
+  campResults.sort((a, b) => b.totalCost - a.totalCost).forEach(r => {
+    heatHtml += `<tr><td style="padding:6px 8px;font-weight:600;white-space:nowrap;">${U.campShortName(r.camp)}</td>`;
+    r.hourAvg.forEach(v => {
+      const intensity = globalMax > 0 ? v / globalMax : 0;
+      const bg = intensity > 0.7 ? `rgba(239,68,68,${0.2 + intensity * 0.6})` :
+                 intensity > 0.3 ? `rgba(245,158,11,${0.1 + intensity * 0.5})` :
+                 intensity > 0.05 ? `rgba(34,197,94,${0.05 + intensity * 0.3})` : 'transparent';
+      heatHtml += `<td style="padding:3px;text-align:center;background:${bg};border-radius:2px;" title="${U.fmt(v)} HKD">${v > 1 ? Math.round(v) : ''}</td>`;
+    });
+    const concCls = r.isConcentrated ? 'clr-bad bold' : '';
+    heatHtml += `<td class="num ${concCls}" style="padding:4px;">${r.concentration.toFixed(0)}%</td></tr>`;
+  });
+  heatHtml += '</tbody></table>';
+  U.html('hourly-heatmap', heatHtml);
+
+  let tblHtml = '';
+  campResults.sort((a, b) => b.totalCost - a.totalCost).forEach(r => {
+    tblHtml += `<tr><td class="bold">${U.campShortName(r.camp)}</td><td>${targetDates.join(', ')}</td>`;
+    r.hourAvg.forEach(v => { tblHtml += `<td class="num">${v > 0 ? Math.round(v) : ''}</td>`; });
+    tblHtml += `<td class="num ${r.isConcentrated ? 'clr-bad bold' : ''}">${r.concentration.toFixed(0)}%</td></tr>`;
+  });
+  U.html('hourly-tbody', tblHtml);
 }
 
 // ═══════════════════════════════════════
@@ -1572,7 +1916,23 @@ function openKeywordDrawer(kw, allTerms, campLabel) {
     verdictTitle = '✅ 高效词 — 建议保持并扩量';
     verdictDetail = `转化 ${kw.purchaseNew} 次，ROAS ${U.fmt(kwRoas)}，是核心流量来源。`;
     if (kw.impressionShare === '< 10%') actions.push({ icon: '📈', title: '建议提价抢量', detail: `展示份额仅 ${kw.impressionShare}，说明还有大量搜索流量未展示。建议提价 15-30% 测试，观察边际 CPA 变化。` });
-    if (kw.matchType && kw.matchType.includes('广泛')) actions.push({ icon: '🎯', title: '添加精确匹配版本', detail: `当前为广泛匹配，流量质量不稳定。建议复制为 [${kw.keyword}] 精确匹配单独投放，锁住优质流量。` });
+    if (kw.matchType && kw.matchType.includes('广泛')) {
+      const kwCPA = kw.cpa || (kw.purchaseNew > 0 && kw.cost > 0 ? kw.cost / kw.purchaseNew : 0);
+      const campObj = SEARCH_CAMPS.find(cc => cc.name === (kw._camp || campLabel));
+      const campCPA = campObj ? campObj.newCPA : 0;
+      if (kwCPA > 0 && campCPA > 0 && kwCPA > campCPA * 1.2) {
+        actions.push({ icon: '🎯', title: '渐进收紧：广泛→词组匹配', detail: `当前广泛匹配 CPA ${U.fmt(kwCPA)} 高于 Campaign 均值 ${U.fmt(campCPA)} 超 20%。建议先收紧到词组匹配控制成本，若 CPA 仍高则进一步收为精确匹配。同时可提高出价 10-15% 弥补流量损失。` });
+      } else {
+        actions.push({ icon: '🎯', title: '添加精确匹配版本', detail: `当前为广泛匹配，流量质量不稳定。建议复制为 [${kw.keyword}] 精确匹配单独投放，锁住优质流量。` });
+      }
+    } else if (kw.matchType && kw.matchType.includes('词组')) {
+      const kwCPA = kw.cpa || (kw.purchaseNew > 0 && kw.cost > 0 ? kw.cost / kw.purchaseNew : 0);
+      const campObj = SEARCH_CAMPS.find(cc => cc.name === (kw._camp || campLabel));
+      const campCPA = campObj ? campObj.newCPA : 0;
+      if (kwCPA > 0 && campCPA > 0 && kwCPA > campCPA * 1.2) {
+        actions.push({ icon: '🎯', title: '渐进收紧：词组→精确匹配', detail: `当前词组匹配 CPA ${U.fmt(kwCPA)} 高于 Campaign 均值 ${U.fmt(campCPA)} 超 20%。建议收紧为精确匹配锁定流量。精确匹配后展示量会下降，可适当提高出价弥补。` });
+      }
+    }
     if (qsBad.length > 0) {
       actions.push({ icon: '🏗️', title: `拆分独立广告组，针对性优化 QS（${qsBad.join('、')}偏低）`, detail: `高效词 QS 有提升空间。建议将 "${kw.keyword}" 从「${adGroupName}」拆出到独立广告组，配置专属文案和落地页，提升 QS 可进一步压低 CPC、扩大利润。` });
     }
@@ -1582,7 +1942,8 @@ function openKeywordDrawer(kw, allTerms, campLabel) {
     verdictDetail = `花费 ${U.fmt(kw.cost)}，点击 ${kw.clicks || 0} 次，0 转化。已消耗足够预算验证效果，继续投放大概率持续浪费。`;
     actions.push({ icon: '🚫', title: '暂停关键词或大幅降价', detail: '累计花费已超过正常 CPA 数倍仍无转化，建议直接暂停止损。' });
     actions.push({ icon: '🔍', title: '检查搜索词报告', detail: '确认是否被大量无关搜索词触发。如有，添加否定关键词后可考虑重新开启。' });
-    if (kw.matchType && kw.matchType.includes('广泛')) actions.push({ icon: '🎯', title: '收窄匹配类型', detail: '广泛匹配可能是导致0转化的主因——匹配了偏离意图的搜索词。改为词组或精确匹配。' });
+    if (kw.matchType && kw.matchType.includes('广泛')) actions.push({ icon: '🎯', title: '收紧匹配：广泛→词组→精确', detail: '广泛匹配可能是导致0转化的主因——匹配了偏离意图的搜索词。建议阶梯式收紧：先改为词组匹配观察 3-5 天，若仍无转化再收紧为精确匹配或直接暂停。' });
+    if (kw.matchType && kw.matchType.includes('词组')) actions.push({ icon: '🎯', title: '收紧为精确匹配或暂停', detail: '词组匹配仍无转化，建议收为精确匹配做最后测试，若仍不行则暂停止损。' });
 
   } else if (kw.qualityScore && Number(kw.qualityScore) < 6) {
     verdictTitle = `🔴 QS 偏低 (${kw.qualityScore}/10) — 建议拆组专项优化`;
@@ -2209,7 +2570,13 @@ const MOCK_LANDING_PAGES = [
 ];
 
 function renderLandingPageZone() {
-  const pages = MOCK_LANDING_PAGES;
+  const hasReal = typeof ADW_LP_HEALTH !== 'undefined' && Array.isArray(ADW_LP_HEALTH) && ADW_LP_HEALTH.length > 0;
+  const pages = hasReal ? ADW_LP_HEALTH : MOCK_LANDING_PAGES;
+  const lpTag = document.querySelector('#view-landing-page .data-tag');
+  if (lpTag) {
+    lpTag.className = hasReal ? 'data-tag data-tag-real' : 'data-tag data-tag-mock';
+    lpTag.textContent = hasReal ? 'REAL DATA' : 'MOCK DATA';
+  }
   const lcpBad = pages.filter(p => p.lcpMs > 3000).length;
   const gclidLost = pages.filter(p => !p.gclidPreserved).length;
   const totalCamps = pages.reduce((s, p) => s + p.campaigns.length, 0);
@@ -2868,7 +3235,8 @@ function renderChangesSummary(changes, label) {
 // ═══════════════════════════════════════
 function refreshAllDashboardRenders() {
   const modules = [
-    renderTrustGate, renderCampaignOverview, renderDrillDown, renderRootCause,
+    renderTrustGate, renderBudgetMonitor, renderCPAMonitor, renderHourlySpend,
+    renderCampaignOverview, renderDrillDown, renderRootCause,
     refreshSearchTermsSelectOnly, renderAdCopy, renderClusterView,
     renderQualityScore, renderDevices, renderLandingPageZone,
     renderGender, renderAge, renderAdPolicy, renderChangeLog, renderNegKWCenter
@@ -2928,10 +3296,25 @@ function initGlobalDateRangeBar() {
   });
 }
 
-initSearchTermsModule();
-initAdCopyModule();
-refreshAllDashboardRenders();
-initGlobalDateRangeBar();
+try {
+  initSearchTermsModule();
+  initAdCopyModule();
+  refreshAllDashboardRenders();
+  initGlobalDateRangeBar();
+  console.log('[INIT OK] SEARCH_CAMPS:', SEARCH_CAMPS.length, 'DATE_RANGE:', JSON.stringify(DATE_RANGE));
+} catch (e) {
+  console.error('[INIT FATAL]', e);
+  const bar = document.getElementById('date-range-hint');
+  if (bar) bar.textContent = 'JS 初始化报错: ' + e.message;
+  document.title = 'INIT ERR: ' + e.message;
+}
+
+(function initHourlySelects() {
+  const cs = document.getElementById('hourly-camp-select');
+  const ds = document.getElementById('hourly-date-select');
+  if (cs) cs.addEventListener('change', renderHourlySpend);
+  if (ds) ds.addEventListener('change', renderHourlySpend);
+})();
 
 // ═══════════════════════════════════════
 // NEGATIVE KEYWORD DIAGNOSTIC CENTER
